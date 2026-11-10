@@ -132,6 +132,12 @@ class AppServer:
             ensure_git_on_path()
         except Exception:  # noqa: BLE001 - a missing git is reported later, not here
             pass
+        try:
+            from .codex_env import ensure_python_on_path
+
+            ensure_python_on_path()
+        except Exception:  # noqa: BLE001 - PATH is a convenience, not a precondition
+            pass
 
         arguments = [str(self.executable), "app-server", "--listen", "stdio://"]
         for key, value in self.config_overrides.items():

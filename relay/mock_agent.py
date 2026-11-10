@@ -82,6 +82,10 @@ class MockAgent:
         self._remaining_start_failures = self.behaviour.fail_thread_starts
         #: Session ids in creation order; used by tests to assert A/B/C/D.
         self.created_threads: list[str] = []
+        #: Names and git metadata the controller asked for (cosmetic signalling).
+        self.thread_names: dict[str, str] = {}
+        self.thread_name_history: dict[str, list[str]] = {}
+        self.thread_metadata: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # SessionDriver protocol
@@ -130,6 +134,28 @@ class MockAgent:
         if thread_id not in self._threads:
             raise RuntimeError(f"mock thread not found: {thread_id}")
         return self.read_thread(thread_id)
+
+    def set_thread_name(self, thread_id: str, name: str) -> bool:
+        """Record the name a real driver would send to ``thread/name/set``."""
+        self.thread_names[thread_id] = name
+        self.thread_name_history.setdefault(thread_id, []).append(name)
+        return True
+
+    def update_thread_metadata(
+        self,
+        thread_id: str,
+        *,
+        branch: str | None = None,
+        sha: str | None = None,
+        origin_url: str | None = None,
+    ) -> bool:
+        """Record git metadata a real driver would send."""
+        self.thread_metadata[thread_id] = {
+            "branch": branch,
+            "sha": sha,
+            "origin_url": origin_url,
+        }
+        return True
 
     def thread_state(self, thread_id: str) -> ThreadState:
         """Return the mock thread's live state."""

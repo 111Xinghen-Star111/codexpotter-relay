@@ -199,6 +199,11 @@ class GitRepository:
         self.configure_identity(name or "CodexPotter Relay", email or "relay@localhost")
         return True
 
+    def remote_url(self) -> str | None:
+        """Return the ``origin`` remote URL, if the repository has one."""
+        value = self._config_value("remote.origin.url")
+        return value or None
+
     def _config_value(self, key: str) -> str:
         """Return a git config value, or an empty string when unset."""
         completed = subprocess.run(

@@ -144,6 +144,9 @@ class RelayController:
         self._driver_is_mock = bool(getattr(driver, "is_mock", False))
         #: Task ids already observed as ``done``; used to checkpoint progress.
         self._done_task_ids: set[str] = set()
+        #: Session labels already pushed to Codex, and sessions that got metadata.
+        self._session_labels: dict[str, str] = {}
+        self._metadata_sent: set[str] = set()
 
     # ------------------------------------------------------------------
     # chain construction
@@ -331,6 +334,7 @@ class RelayController:
             self._turns_since_checkpoint += 1
 
             self._state = self._reload_state(chain)
+            self._apply_session_label(chain, session_id, self._state, git=git)
             marker = parse_marker(outcome.final_text)
             self._record_turn_event(chain, session_id, outcome, marker)
 
@@ -503,6 +507,9 @@ class RelayController:
         if not project_root.is_dir():
             raise CheckpointError(f"project directory does not exist: {project_root}")
         ensure_scaffold(project_root)
+        from .codex_env import ensure_python_on_path
+
+        ensure_python_on_path()
         git.ensure_identity()
         git.ensure_branch(chain.work_branch)
         if not git.snapshot().has_commits:
@@ -636,6 +643,57 @@ class RelayController:
     # ------------------------------------------------------------------
     # sessions and turns
     # ------------------------------------------------------------------
+    def _session_label(self, chain: Chain, ordinal: int, state: dict[str, Any]) -> str:
+        """Return the human label shown for this session in Codex's session list."""
+        short = chain.id[3:11] if chain.id.startswith("ch_") else chain.id[:8]
+        label = f"Relay {short} #{ordinal}"
+        task = next_pending_task(state)
+        if task:
+            title = str(task.get("title", "")).strip()
+            if len(title) > 48:
+                title = title[:45] + "..."
+            label = f"{label} \u00b7 {task['id']} {title}".strip()
+        elif all_tasks_done(state):
+            label = f"{label} \u00b7 done"
+        return label[:120]
+
+    def _apply_session_label(
+        self, chain: Chain, session_id: str, state: dict[str, Any], *, git: GitRepository | None = None
+    ) -> None:
+        """Push a readable name (and git metadata) for a session to Codex.
+
+        This is what makes relay sessions identifiable in the Codex desktop
+        session list. It is purely cosmetic, so every failure is logged and
+        ignored rather than aborting the chain.
+        """
+        session = self.db.find_session(session_id)
+        if session is None:
+            return
+        label = self._session_label(chain, session.ordinal or 1, state)
+        if self._session_labels.get(session_id) != label:
+            setter = getattr(self.driver, "set_thread_name", None)
+            if setter is not None:
+                try:
+                    if setter(session_id, label):
+                        self._session_labels[session_id] = label
+                except Exception as error:  # noqa: BLE001 - cosmetic only
+                    self._log("warning", "session labelling failed", error=str(error))
+
+        if git is not None and session_id not in self._metadata_sent:
+            updater = getattr(self.driver, "update_thread_metadata", None)
+            if updater is not None:
+                try:
+                    snapshot = git.snapshot()
+                    if updater(
+                        session_id,
+                        branch=snapshot.branch,
+                        sha=snapshot.head,
+                        origin_url=git.remote_url(),
+                    ):
+                        self._metadata_sent.add(session_id)
+                except Exception as error:  # noqa: BLE001 - cosmetic only
+                    self._log("warning", "session metadata failed", error=str(error))
+
     def _start_initial_session(self, chain: Chain) -> str:
         """Create the chain's first session, or the next one if a session was lost."""
         existing = [
@@ -680,6 +738,7 @@ class RelayController:
             session_id=thread_id,
             ordinal=ordinal,
         )
+        self._apply_session_label(chain, thread_id, self._state or {}, git=None)
         return thread_id
 
     def _run_work_turn(self, chain: Chain, session_id: str, prompt: str) -> TurnOutcome:
@@ -858,6 +917,9 @@ class RelayController:
             write_checkpoint=lambda reason: self._write_checkpoint(chain, git, reason=reason),
             logger=self._logger,
             simulated=decision.sample.simulated,
+            label_session=lambda session_id: self._apply_session_label(
+                chain, session_id, self._state or {}, git=git
+            ),
         )
         self.db.append_event(
             event_key=f"{chain.id}:handoff-start:{sequence}",

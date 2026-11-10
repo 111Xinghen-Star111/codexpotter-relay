@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ENV_CODEX_PATH = "CODEXPOTTER_CODEX"
@@ -99,3 +100,23 @@ def codex_login_status(executable: Path, *, timeout: float = 60.0) -> tuple[bool
     lowered = output.lower()
     logged_in = completed.returncode == 0 and "not logged in" not in lowered
     return logged_in, output
+
+
+def ensure_python_on_path() -> str | None:
+    """Make the running interpreter's directory resolvable for child processes.
+
+    Acceptance commands are written by users (``python -m pytest``, ``python
+    script.py``). When the controller itself was started from a shell whose
+    ``PATH`` predates the Python installation, those commands fail with exit
+    code 9009 / "command not found" even though the project is fine. Prepending
+    the interpreter's own directory keeps such commands working.
+    """
+    executable = sys.executable
+    if not executable:
+        return None
+    directory = str(Path(executable).parent)
+    current = os.environ.get("PATH", "")
+    parts = [part for part in current.split(os.pathsep) if part]
+    if not any(part.rstrip("\\/").lower() == directory.rstrip("\\/").lower() for part in parts):
+        os.environ["PATH"] = os.pathsep.join([directory, *parts])
+    return executable

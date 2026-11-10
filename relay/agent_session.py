@@ -193,6 +193,48 @@ class CodexAgent:
         response = self._app.request("thread/read", {"threadId": thread_id})
         return response.get("thread") or {}
 
+    def set_thread_name(self, thread_id: str, name: str) -> bool:
+        """Give a thread a human-recognisable name.
+
+        Codex desktop lists sessions by name, and a relay-created thread would
+        otherwise show up as an unnamed entry whose preview is the raw prompt.
+        Naming is cosmetic: a failure is logged and never fails the run.
+        """
+        try:
+            self._app.request("thread/name/set", {"threadId": thread_id, "name": name})
+        except Exception as error:  # noqa: BLE001 - naming must never break a chain
+            self._log("warning", "thread naming failed", thread_id=thread_id, error=str(error))
+            return False
+        self._log("info", "thread named", thread_id=thread_id, name=name)
+        return True
+
+    def update_thread_metadata(
+        self,
+        thread_id: str,
+        *,
+        branch: str | None = None,
+        sha: str | None = None,
+        origin_url: str | None = None,
+    ) -> bool:
+        """Attach git metadata to a thread so the desktop app can show it."""
+        git_info = {
+            key: value
+            for key, value in (("branch", branch), ("sha", sha), ("originUrl", origin_url))
+            if value
+        }
+        if not git_info:
+            return False
+        try:
+            self._app.request(
+                "thread/metadata/update", {"threadId": thread_id, "gitInfo": git_info}
+            )
+        except Exception as error:  # noqa: BLE001 - metadata is cosmetic
+            self._log(
+                "warning", "thread metadata update failed", thread_id=thread_id, error=str(error)
+            )
+            return False
+        return True
+
     def attach_thread(
         self,
         thread_id: str,

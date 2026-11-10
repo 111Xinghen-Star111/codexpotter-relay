@@ -105,6 +105,7 @@ class HandoffManager:
         write_checkpoint: Callable[[str], Checkpoint],
         logger: Any = None,
         simulated: bool = False,
+        label_session: Callable[[str], None] | None = None,
     ) -> None:
         self.db = database
         self.chain = chain
@@ -115,6 +116,7 @@ class HandoffManager:
         self.write_checkpoint = write_checkpoint
         self._logger = logger
         self.simulated = simulated
+        self._label_session = label_session
 
     # ------------------------------------------------------------------
     # public API
@@ -157,6 +159,8 @@ class HandoffManager:
                 self._verify(checkpoint, new_session_id)
                 self.db.update_handoff(handoff.id, phase="COMMIT", state="pending")
                 self._commit(checkpoint, new_session_id, previous_session)
+                if self._label_session is not None:
+                    self._label_session(new_session_id)
             except Exception as error:  # noqa: BLE001 - bounded retry, then rollback
                 last_error = f"attempt {attempt}: {error}"
                 self._log(
