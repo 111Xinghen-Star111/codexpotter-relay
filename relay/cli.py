@@ -150,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--max-handoffs", type=int, default=None)
     recover.add_argument("--max-model-requests", type=int, default=None)
 
+    subparsers.add_parser("mcp", help="(internal) run the MCP server used by the Codex plugin")
+
+    plugin = subparsers.add_parser("plugin", help="install the Relay as a Codex plugin")
+    plugin.add_argument("action", choices=["install", "uninstall", "status"])
+
     hooks = subparsers.add_parser("hooks", help="install or remove the hook collector")
     hooks.add_argument("action", choices=["install", "uninstall", "status"])
 
@@ -241,6 +246,10 @@ def _dispatch(parser: argparse.ArgumentParser, arguments: argparse.Namespace) ->
         return _cmd_test_report(arguments)
     if command == "recover":
         return _cmd_recover(arguments)
+    if command == "mcp":
+        return _cmd_mcp(arguments)
+    if command == "plugin":
+        return _cmd_plugin(arguments)
     if command == "hooks":
         return _cmd_hooks(arguments)
     if command == "hook":
@@ -572,6 +581,46 @@ def _cmd_recover(arguments: argparse.Namespace) -> int:
     return 0 if failures == 0 else 1
 
 
+def _cmd_mcp(arguments: argparse.Namespace) -> int:
+    """Run the MCP stdio server (started by Codex for the plugin)."""
+    from .mcp import McpServer, RelayToolbox
+
+    toolbox = RelayToolbox(config_path=arguments.config, db_path=arguments.db)
+    return McpServer(toolbox).serve()
+
+
+def _cmd_plugin(arguments: argparse.Namespace) -> int:
+    from .plugin import install_plugin, plugin_status, uninstall_plugin
+
+    if arguments.action == "install":
+        result = install_plugin()
+        _print(
+            arguments,
+            result,
+            "Codex 插件安装"
+            + ("成功" if result["ok"] else "未完成")
+            + f"\n  plugin: {result['plugin_root']}\n  registered: {result['registered']}",
+        )
+        return 0 if result["ok"] else 1
+    if arguments.action == "uninstall":
+        result = uninstall_plugin()
+        _print(arguments, result, f"插件已卸载（registered={result['registered']}）")
+        return 0
+    status = plugin_status()
+    _print(arguments, status, _format_plugin_status(status))
+    return 0 if status["registered"] else 1
+
+
+def _format_plugin_status(status: dict[str, object]) -> str:
+    return (
+        f"plugin id: {status['plugin_id']}\n"
+        f"marketplace: {status['marketplace_root']} (rendered={status['rendered']})\n"
+        f"plugin dir: {status['plugin_root']}\n"
+        f"registered in Codex config: {status['registered']}\n"
+        f"installed in cache: {status['cache_present']} ({status['cache_dir']})"
+    )
+
+
 def _cmd_hooks(arguments: argparse.Namespace) -> int:
     installer = HookInstaller(database_path=paths.database_path("production"))
     if arguments.action == "install":
@@ -687,31 +736,19 @@ def _run_controller(
 
 def _spawn_detached(arguments: argparse.Namespace, chain_id: str) -> int:
     """Start the controller for ``chain_id`` in a detached child process."""
-    log_file = paths.log_dir() / f"controller-{chain_id}.out"
-    paths.ensure_directory(paths.log_dir())
-    creationflags = 0
-    if sys.platform == "win32":
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    command = [sys.executable, "-m", "relay"]
-    if arguments.config:
-        command.extend(["--config", str(arguments.config)])
-    if arguments.db:
-        command.extend(["--db", str(arguments.db)])
-    command.extend(["run", "--chain", chain_id])
-    for flag in ("max_turns", "max_handoffs", "max_model_requests"):
-        value = getattr(arguments, flag, None)
-        if value:
-            command.extend(["--" + flag.replace("_", "-"), str(value)])
-    with open(log_file, "a", encoding="utf-8") as handle:
-        process = subprocess.Popen(
-            command,
-            stdout=handle,
-            stderr=handle,
-            stdin=subprocess.DEVNULL,
-            creationflags=creationflags,
-            cwd=str(Path.cwd()),
-        )
-    print(f"controller detached, pid={process.pid}, log={log_file}")
+    from .ops import spawn_detached_controller
+
+    budgets = {
+        flag: getattr(arguments, flag, None)
+        for flag in ("max_turns", "max_handoffs", "max_model_requests")
+    }
+    pid, log_file = spawn_detached_controller(
+        chain_id,
+        config_path=arguments.config,
+        db_path=arguments.db,
+        budgets=budgets,
+    )
+    print(f"controller detached, pid={pid}, log={log_file}")
     return 0
 
 

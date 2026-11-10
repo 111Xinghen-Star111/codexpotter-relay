@@ -14,6 +14,7 @@ param(
     [string]$Python,
     [string]$Codex,
     [switch]$WithHooks,
+    [switch]$SkipPlugin,
     [switch]$SkipPath
 )
 
@@ -128,6 +129,23 @@ if (-not $SkipPath) {
 Write-Step 'Creating configuration and database'
 & $pythonPath -m relay init
 if ($LASTEXITCODE -ne 0) { Fail 'relay init failed.' }
+
+# ---------------------------------------------------------------- plugin
+if (-not $SkipPlugin) {
+    Write-Step 'Installing the Codex plugin'
+    & $pythonPath -m relay plugin install
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '    plugin registered: codexpotter-relay@codexpotter-relay-local'
+        Write-Host '    restart Codex so the plugin, its tools and the $relay skill load.'
+    }
+    else {
+        Write-Host '    plugin install did not complete; the relay CLI still works on its own.' -ForegroundColor Yellow
+        Write-Host '    retry later with: relay plugin install'
+    }
+}
+else {
+    Write-Step 'Skipping the Codex plugin'
+}
 
 # ---------------------------------------------------------------- hooks
 if ($WithHooks) {

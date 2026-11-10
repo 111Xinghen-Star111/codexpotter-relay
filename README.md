@@ -84,7 +84,8 @@ Codex 可执行文件的解析顺序（`relay/codex_env.py`）：全局参数 `-
 2. `pip install -e <仓库根目录>`，注册 `relay` 命令（`pyproject.toml` 中的 `[project.scripts]`）；
 3. 把 Python 的 Scripts 目录加入**用户** PATH（`-SkipPath` 可跳过）；
 4. `relay init` 创建 `relay.toml` 与 `relay.db`；
-5. 可选：`-WithHooks` 时把托管 hooks 块写入 Codex 配置（默认**不写**，因为 Codex 0.167 不执行 `[hooks]` 配置项，状态采集走 app-server 通知）。
+5. `relay plugin install` 把 Relay 注册成一个 **Codex 插件**（`-SkipPlugin` 可跳过）；
+6. 可选：`-WithHooks` 时把托管 hooks 块写入 Codex 配置（默认**不写**，因为 Codex 0.167 不执行 `[hooks]` 配置项，状态采集走 app-server 通知）。
 
 ```powershell
 # 在仓库根目录执行
@@ -115,6 +116,43 @@ relay init
 relay hooks install   # 可选；Codex 0.167 不执行 [hooks]，状态采集靠 app-server 通知
 # 若 relay 命令不在 PATH，可直接用模块方式调用：python -m relay <子命令>
 ```
+
+## 作为 Codex 插件使用
+
+Relay 会以 Codex 插件的形式安装，插件里包含一个 MCP server 和 `$relay` 技能：
+
+```powershell
+relay plugin install      # 渲染 marketplace + 注册插件
+relay plugin status       # 查看是否已注册
+relay plugin uninstall    # 卸载插件（不动工作数据）
+```
+
+安装后目录结构（由 `relay plugin install` 生成，不要手改）：
+
+```text
+%LOCALAPPDATA%\CodexPotterRelay\plugin-marketplace\
+  .agents\plugins\marketplace.json                 ← marketplace 清单
+  plugins\codexpotter-relay\
+    plugin.json                                     ← 插件清单
+    mcp.json                                        ← 启动 python -m relay.mcp
+    skills\relay\SKILL.md                           ← $relay 技能
+```
+
+装完之后**重启 Codex**，插件才会加载。之后在任意 Codex 会话里可以：
+
+- 直接说「用 relay 接手这个项目的目标」，agent 会调用 `relay_start` 等工具；
+- 或显式用 `$relay` 触发技能；
+- 插件暴露的工具：`relay_start`、`relay_status`、`relay_chains`、`relay_report`、
+  `relay_checkpoint`、`relay_pause`、`relay_resume`、`relay_stop`、`relay_recover`、`relay_doctor`。
+
+### 插件形态的边界
+
+插件只是**入口**（安装方式 + 会话内可调用的工具 + 技能），真正的接力引擎是独立进程：
+
+- 插件里的 MCP server 随 Codex 会话启动/退出，所以 `relay_start` 会把控制器**脱离进程**拉起，
+  会话关闭后工作链继续跑；
+- 因此卸载插件不会中止正在跑的工作链（用 `relay stop` 停止）；
+- 插件**不会**接管你在 Codex 里手打的对话：只有 `relay_start` 发起的链才会自动换会话。
 
 ## 快速开始
 
@@ -189,6 +227,8 @@ relay report --chain ch_1a2b3c4d5e6f
 | `relay test` | 运行指定测试层级 |
 | `relay test-handoff` | 连续 N 次真实交接测试 |
 | `relay test-report` | 重新汇总测试报告 |
+| `relay plugin` | 安装 / 卸载 / 查看 Codex 插件 |
+| `relay mcp` | （内部）插件使用的 MCP server |
 | `relay hooks` | 安装 / 移除 / 查看 hooks 采集器 |
 | `relay hook` | （内部）hooks 采集器入口 |
 
@@ -254,6 +294,15 @@ relay report --chain ch_1a2b3c4d5e6f
 | | `--keep-workspaces` | 关闭 | 同上 |
 | `relay test-report` | `--chain ID` | 测试库最近 20 条链 | 指定要汇总的链 |
 | | `--mode ...` | `real-handoff` | 报告文件名与标题使用的模式名 |
+
+### 插件
+
+| 命令 | 作用 |
+| --- | --- |
+| `relay plugin install` | 渲染 marketplace 到 `%LOCALAPPDATA%\CodexPotterRelay\plugin-marketplace`，执行 `codex plugin marketplace add` 与 `codex plugin add`，并回读注册状态 |
+| `relay plugin status` | 打印 plugin id、marketplace 是否已渲染、Codex 配置里是否已注册、缓存目录是否存在 |
+| `relay plugin uninstall` | 执行 `codex plugin remove` 与 `codex plugin marketplace remove`，并删除渲染目录；不动工作数据 |
+| `relay mcp` | 启动 MCP stdio server（Codex 按 `mcp.json` 自动调用，一般不用手动执行） |
 
 ### Hooks
 

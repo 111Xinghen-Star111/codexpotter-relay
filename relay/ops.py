@@ -165,6 +165,51 @@ def stop_chain(database: Database, chain: Chain, reason: str = "stopped by opera
     return database.transition_chain(chain.id, "stopped", reason=reason)
 
 
+def spawn_detached_controller(
+    chain_id: str,
+    *,
+    config_path: Path | None = None,
+    db_path: Path | None = None,
+    budgets: dict[str, int] | None = None,
+) -> tuple[int, Path]:
+    """Start the controller for ``chain_id`` in a detached process.
+
+    A plugin or CLI caller must return immediately while the chain keeps working,
+    and the controller must not be a child of a session that will end. Returns
+    ``(pid, log_path)``.
+    """
+    import subprocess
+    import sys
+
+    log_directory = log_dir()
+    log_directory.mkdir(parents=True, exist_ok=True)
+    log_file = log_directory / f"controller-{chain_id}.out"
+
+    command = [sys.executable, "-m", "relay"]
+    if config_path:
+        command.extend(["--config", str(config_path)])
+    if db_path:
+        command.extend(["--db", str(db_path)])
+    command.extend(["run", "--chain", chain_id])
+    for flag, value in (budgets or {}).items():
+        if value:
+            command.extend([f"--{flag.replace('_', '-')}", str(value)])
+
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    with open(log_file, "a", encoding="utf-8") as handle:
+        process = subprocess.Popen(
+            command,
+            stdout=handle,
+            stderr=handle,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+            cwd=str(Path.cwd()),
+        )
+    return process.pid, log_file
+
+
 def make_event_sink(database: Database, chain_id: str) -> Callable[[str, dict[str, Any]], None]:
     """Return a notification recorder that stores protocol events for a chain.
 

@@ -35,6 +35,18 @@ if (-not $pythonPath) {
 }
 
 if ($pythonPath) {
+    Write-Step 'Uninstalling the Codex plugin'
+    Push-Location $repoRoot
+    try {
+        & $pythonPath -m relay plugin uninstall
+    }
+    catch {
+        Write-Host "    plugin was not installed or could not be removed: $_" -ForegroundColor Yellow
+    }
+    finally {
+        Pop-Location
+    }
+
     Write-Step 'Removing the managed hooks block'
     Push-Location $repoRoot
     try {
