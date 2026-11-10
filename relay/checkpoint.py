@@ -405,6 +405,22 @@ def default_state(
     }
 
 
+def evidence_to_text(value: Any) -> str | None:
+    """Normalise a ledger ``evidence`` value into text for storage and display.
+
+    Agents sometimes record structured evidence (objects or lists). The database
+    column is text, so structured values are serialised instead of being
+    silently dropped or crashing the sync.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
 def next_pending_task(state: dict[str, Any]) -> dict[str, Any] | None:
     """Return the task a continuing session should work on next."""
     tasks = state.get("tasks") or []
@@ -463,7 +479,7 @@ def build_handoff_markdown(
         "| --- | --- | --- |",
     ]
     for task in state.get("tasks") or []:
-        evidence = (task.get("evidence") or "").replace("|", "\\|")
+        evidence = (evidence_to_text(task.get("evidence")) or "").replace("|", "\\|")
         if len(evidence) > 160:
             evidence = evidence[:157] + "..."
         lines.append(f"| {task['id']}: {task['title']} | {task['status']} | {evidence} |")

@@ -30,6 +30,7 @@ from .agent_session import SessionError, TurnOutcome
 from .appserver import AppServerError
 from .checkpoint import (
     CheckpointError,
+    evidence_to_text,
     GitRepository,
     GitSnapshot,
     HandoffPackage,
@@ -511,7 +512,7 @@ class RelayController:
                 task_id=str(task.get("id")),
                 title=str(task.get("title", "")),
                 status=status,
-                evidence=task.get("evidence"),
+                evidence=evidence_to_text(task.get("evidence")),
                 session_id=chain.active_session_id,
                 verified=status == "done" and bool(task.get("evidence")),
             )
