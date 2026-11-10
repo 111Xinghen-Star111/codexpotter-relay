@@ -553,6 +553,10 @@ class RelayController:
             payload={"checkpoint_id": checkpoint.id, "version": checkpoint.version},
             chain_id=chain.id,
         )
+        # The restored ledger is older than what the database last recorded, so
+        # mirror it back; otherwise task_results would claim work this checkpoint
+        # does not contain.
+        self._sync_tasks(chain, package.state)
         return package.state
 
     def _reload_state(self, chain: Chain) -> dict[str, Any]:
