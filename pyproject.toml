@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codexpotter-relay"
+version = "0.1.0"
+description = "Automatic cross-session Codex development relay built on CodexPotter"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = []
+keywords = ["codex", "codexpotter", "relay", "handoff", "automation"]
+
+[project.scripts]
+relay = "relay.cli:main"
+
+[tool.setuptools]
+packages = ["relay"]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
