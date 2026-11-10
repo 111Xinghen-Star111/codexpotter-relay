@@ -21,3 +21,7 @@ relay-logs/
 .idea/
 Thumbs.db
 desktop.ini
+
+# pip editable install metadata
+*.egg-info/
+
