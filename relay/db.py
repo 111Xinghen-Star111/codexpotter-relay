@@ -49,10 +49,14 @@ CHAIN_STATES = (
 #: Allowed chain state transitions. Anything else raises, which keeps a crash
 #: from silently producing an impossible state.
 CHAIN_TRANSITIONS: dict[str, frozenset[str]] = {
-    "pending": frozenset({"running", "stopped", "failed"}),
+    # ``pending -> paused`` lets an operator hold a freshly created chain before
+    # the controller ever issues a model request.
+    "pending": frozenset({"running", "paused", "stopped", "failed"}),
     "running": frozenset({"handoff", "paused", "stopped", "complete", "failed"}),
     "handoff": frozenset({"running", "failed", "stopped"}),
-    "paused": frozenset({"running", "stopped", "failed"}),
+    # A paused chain may still be handed off deliberately: the operator keeps
+    # control of write access without resuming automatic work.
+    "paused": frozenset({"running", "handoff", "stopped", "failed"}),
     "complete": frozenset(),
     "stopped": frozenset(),
     "failed": frozenset(),

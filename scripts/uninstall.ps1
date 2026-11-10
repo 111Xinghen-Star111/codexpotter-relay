@@ -55,11 +55,28 @@ if ($pythonPath) {
 
     $scriptsDir = & $pythonPath -c "import sysconfig; print(sysconfig.get_path('scripts'))"
     Write-Step 'Cleaning PATH'
+    $normalized = $scriptsDir.TrimEnd('\', '/')
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($userPath) {
-        $parts = $userPath -split ';' | Where-Object { $_ -and $_ -ne $scriptsDir }
-        [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
-        Write-Host "    PATH entry removed if present: $scriptsDir"
+        # Only drop an entry that this installer added; keep any copy that the
+        # Python installer itself created for other console scripts.
+        $parts = $userPath -split ';' | Where-Object { $_ }
+        $kept = @()
+        $removed = 0
+        foreach ($part in $parts) {
+            if ($part.TrimEnd('\', '/') -ieq $normalized -and $part -ne $scriptsDir) {
+                $removed++
+                continue
+            }
+            $kept += $part
+        }
+        if ($removed -gt 0) {
+            [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+            Write-Host "    removed installer-added PATH entry: $scriptsDir"
+        }
+        else {
+            Write-Host "    no installer-added PATH entry found (a Python-owned entry is left as is)"
+        }
     }
 }
 

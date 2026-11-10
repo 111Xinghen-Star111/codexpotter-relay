@@ -104,10 +104,14 @@ finally {
 Write-Step 'Configuring PATH'
 $scriptsDir = & $pythonPath -c "import sysconfig; print(sysconfig.get_path('scripts'))"
 if (-not $SkipPath) {
+    $normalized = $scriptsDir.TrimEnd('\', '/')
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $parts = @()
     if ($userPath) { $parts = $userPath -split ';' | Where-Object { $_ } }
-    if ($parts -notcontains $scriptsDir) {
+    # Windows PATH comparisons ignore case and trailing separators, so dedupe
+    # the same directory even when the Python installer already added it.
+    $alreadyOnPath = $parts | Where-Object { $_.TrimEnd('\', '/') -ieq $normalized }
+    if (-not $alreadyOnPath) {
         $newPath = (@($parts) + $scriptsDir) -join ';'
         [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
         Write-Host "    added to user PATH: $scriptsDir"
@@ -115,7 +119,7 @@ if (-not $SkipPath) {
     else {
         Write-Host "    already on user PATH: $scriptsDir"
     }
-    if ($env:Path -split ';' -notcontains $scriptsDir) {
+    if (-not ($env:Path -split ';' | Where-Object { $_.TrimEnd('\', '/') -ieq $normalized })) {
         $env:Path = "$scriptsDir;$env:Path"
     }
 }
