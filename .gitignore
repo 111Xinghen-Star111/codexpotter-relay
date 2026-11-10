@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Relay runtime artifacts (never committed)
+.vendor/
+vendor/
+.acl-recovery/
+relay-logs/
+*.log
+
+# Local test scratch projects produced by Level 2 / Level 3 tests
+.relay-test/
+
+# Editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
