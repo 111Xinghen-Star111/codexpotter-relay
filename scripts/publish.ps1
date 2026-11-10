@@ -53,7 +53,9 @@ try {
     }
 
     Write-Step 'Checking SSH access to GitHub (port 443)'
-    $sshText = (& ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1 | Out-String)
+    # Run through cmd.exe so PowerShell does not turn ssh's stderr greeting into
+    # a NativeCommandError; the exit code and text are what matter here.
+    $sshText = (& cmd /c "ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1" | Out-String)
     if ($sshText -match 'successfully authenticated') {
         Write-Host "    $($sshText.Trim())"
     }
