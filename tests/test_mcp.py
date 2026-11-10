@@ -57,6 +57,7 @@ class ToolListTests(ToolboxTestCase):
                 "relay_chains",
                 "relay_report",
                 "relay_checkpoint",
+                "relay_add_requirement",
                 "relay_pause",
                 "relay_resume",
                 "relay_stop",

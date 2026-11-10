@@ -124,6 +124,21 @@ class RelayToolbox:
                 required=["chain"],
             ),
             _tool(
+                "relay_add_requirement",
+                "Record a new requirement for an existing chain (optionally adding tasks). "
+                "It takes effect from the next turn or the next session after a handoff.",
+                {
+                    "chain": {"type": "string"},
+                    "text": {"type": "string", "description": "The new requirement."},
+                    "tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional extra tasks formatted 'T4:title'.",
+                    },
+                },
+                required=["chain", "text"],
+            ),
+            _tool(
                 "relay_checkpoint",
                 "Write a checkpoint of the chain's ledger and git state right now.",
                 {"chain": {"type": "string"}, "reason": {"type": "string"}},
@@ -162,6 +177,7 @@ class RelayToolbox:
             "relay_status": self._status,
             "relay_chains": self._chains,
             "relay_report": self._report,
+            "relay_add_requirement": self._add_requirement,
             "relay_checkpoint": self._checkpoint,
             "relay_pause": lambda args: self._lifecycle("pause", args),
             "relay_resume": lambda args: self._lifecycle("resume", args),
@@ -279,6 +295,21 @@ class RelayToolbox:
             f"tasks {done}/{len(tasks)} done, "
             f"handoffs {len(self.db.list_handoffs(chain.id))}, "
             f"model requests {self.db.count_model_requests(chain.id)}"
+        )
+
+    def _add_requirement(self, arguments: dict[str, Any]) -> ToolResult:
+        from .ops import append_requirement
+
+        chain = self.db.get_chain(str(arguments.get("chain")))
+        text = str(arguments.get("text") or "").strip()
+        if not text:
+            return ToolResult("`text` must not be empty.", is_error=True)
+        tasks = [_parse_task(spec) for spec in arguments.get("tasks") or []]
+        checkpoint = append_requirement(self.db, chain, text=text, tasks=tasks)
+        return ToolResult(
+            f"requirement recorded on {chain.id} (checkpoint v{checkpoint.version}). "
+            "It applies from the next turn of the current session or the next session "
+            "after a handoff; a turn already running cannot be interrupted to inject it."
         )
 
     def _checkpoint(self, arguments: dict[str, Any]) -> ToolResult:

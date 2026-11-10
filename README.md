@@ -145,6 +145,20 @@ relay plugin uninstall    # 卸载插件（不动工作数据）
 - 插件暴露的工具：`relay_start`、`relay_status`、`relay_chains`、`relay_report`、
   `relay_checkpoint`、`relay_pause`、`relay_resume`、`relay_stop`、`relay_recover`、`relay_doctor`。
 
+### 中途追加要求
+
+工作链的目标在 `relay_start` 时确定；之后新增的要求用这条命令追加：
+
+```powershell
+relay require --chain ch_xxx --text "顺带支持 --dry-run，并加一个测试"               --task "T5:实现 --dry-run"
+```
+
+它会：把要求写进台账 `decisions`（`recorded_by=operator`）、可选追加任务、并立刻写一个
+`reason=requirement` 的检查点，`HANDOFF.md` 同步更新。
+
+生效时机：**当前会话的下一轮**，或**交接后的新会话**（新会话本来就会先读台账）。
+正在跑的那一轮不会被中断注入——这是"不打断写入"的取舍。
+
 ### 插件形态的边界
 
 插件只是**入口**（安装方式 + 会话内可调用的工具 + 技能），真正的接力引擎是独立进程：
@@ -222,6 +236,7 @@ relay report --chain ch_1a2b3c4d5e6f
 | `relay handoff` | 立刻交接给新主会话 |
 | `relay pause` / `relay resume` / `relay stop` | 暂停 / 恢复 / 永久停止 |
 | `relay history` | 查看检查点、交接与事件历史 |
+| `relay require` | 中途追加新要求（写入台账并写检查点，下一轮/下次会话生效） |
 | `relay report` | 生成开发报告 |
 | `relay recover` | 接管并继续被中断的工作链（崩溃恢复） |
 | `relay test` | 运行指定测试层级 |

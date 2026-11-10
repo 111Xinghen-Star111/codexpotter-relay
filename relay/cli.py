@@ -107,6 +107,15 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--all", action="store_true")
     status.add_argument("--events", type=int, default=0, help="also print the last N events")
 
+    require_parser = subparsers.add_parser(
+        "require", help="record a new requirement for an existing chain"
+    )
+    require_parser.add_argument("--chain", required=True)
+    require_parser.add_argument("--text", required=True, help="the new requirement")
+    require_parser.add_argument(
+        "--task", action="append", default=[], metavar="ID:TITLE", help="also append a task"
+    )
+
     checkpoint = subparsers.add_parser("checkpoint", help="write a checkpoint now")
     checkpoint.add_argument("--chain", required=True)
     checkpoint.add_argument("--reason", default="manual")
@@ -228,6 +237,8 @@ def _dispatch(parser: argparse.ArgumentParser, arguments: argparse.Namespace) ->
         return _cmd_chains(arguments)
     if command == "status":
         return _cmd_status(arguments)
+    if command == "require":
+        return _cmd_require(arguments)
     if command == "checkpoint":
         return _cmd_checkpoint(arguments)
     if command == "handoff":
@@ -402,6 +413,30 @@ def _cmd_status(arguments: argparse.Namespace) -> int:
     if arguments.events:
         payload["events"] = database.list_events(chain_id=chain.id, limit=arguments.events)
     _print(arguments, payload, _format_status(payload))
+    return 0
+
+
+def _cmd_require(arguments: argparse.Namespace) -> int:
+    """Record a new requirement mid-chain and checkpoint it."""
+    from .ops import append_requirement
+
+    database = _resolve_database(arguments)
+    logger = _logger("cli")
+    chain = database.get_chain(arguments.chain)
+    tasks = [_parse_task(spec) for spec in arguments.task]
+    checkpoint = append_requirement(
+        database, chain, text=arguments.text, tasks=tasks, logger=logger
+    )
+    _print(
+        arguments,
+        {
+            "chain": chain.id,
+            "checkpoint_version": checkpoint.version,
+            "tasks_added": [task["id"] for task in tasks],
+            "requirement": arguments.text,
+        },
+        f"已记录新要求（检查点 v{checkpoint.version}）；下一轮或下一次会话起生效。",
+    )
     return 0
 
 

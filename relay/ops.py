@@ -255,6 +255,88 @@ def make_event_sink(database: Database, chain_id: str) -> Callable[[str, dict[st
     return sink
 
 
+def append_requirement(
+    database: Database,
+    chain: Chain,
+    *,
+    text: str,
+    tasks: list[dict[str, Any]] | None = None,
+    logger: Any = None,
+    git_executable: str | None = None,
+) -> Checkpoint:
+    """Record a new requirement mid-chain and checkpoint it.
+
+    A chain's objective is fixed when it starts, so requirements that arrive
+    later need an explicit channel. They are appended to the ledger (a decision
+    entry plus optional new tasks) and a fresh checkpoint is written, so the
+    next session reads them from ``state.json`` and ``HANDOFF.md``.
+
+    The requirement takes effect from the next turn of the current session or
+    the next session after a handoff — a turn already running cannot be
+    interrupted to inject it.
+    """
+    project_root = Path(chain.project_root)
+    package = read_package(project_root)
+    state = package.state
+
+    cleaned = text.strip()
+    if not cleaned:
+        raise ValueError("requirement text is empty")
+
+    decisions = state.setdefault("decisions", [])
+    if not isinstance(decisions, list):
+        raise ValueError("ledger decisions is not a list")
+    decisions.append(
+        {
+            "summary": f"新增要求 / new requirement: {cleaned}",
+            "recorded_at": time.time(),
+            "recorded_by": "operator",
+        }
+    )
+
+    existing_ids = {str(task.get("id")) for task in state.get("tasks") or []}
+    added_ids: list[str] = []
+    for task in tasks or []:
+        task_id = str(task.get("id") or "").strip()
+        if not task_id:
+            raise ValueError("new task needs an id")
+        if task_id in existing_ids:
+            raise ValueError(f"task {task_id} already exists in the chain")
+        entry = {
+            "id": task_id,
+            "title": str(task.get("title") or task_id),
+            "status": "pending",
+            "evidence": None,
+        }
+        state["tasks"].append(entry)
+        existing_ids.add(task_id)
+        added_ids.append(task_id)
+
+    if state.get("next_task_id") is None and added_ids:
+        state["next_task_id"] = added_ids[0]
+
+    write_package(
+        project_root,
+        HandoffPackage(handoff_md=package.handoff_md, state=state),
+    )
+    checkpoint = capture_checkpoint(
+        database,
+        chain,
+        reason="requirement",
+        logger=logger,
+        git_executable=git_executable,
+        context_notes=f"New requirement recorded: {cleaned}",
+    )
+    database.append_event(
+        event_key=f"{chain.id}:requirement:{int(time.time() * 1000)}",
+        kind="requirement_added",
+        source="controller",
+        payload={"text": cleaned, "tasks": added_ids},
+        chain_id=chain.id,
+    )
+    return checkpoint
+
+
 def doctor(config: RelayConfig) -> dict[str, Any]:
     """Collect environment facts the operator needs before relying on the Relay."""
     report: dict[str, Any] = {}
