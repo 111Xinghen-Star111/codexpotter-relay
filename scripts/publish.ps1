@@ -58,11 +58,11 @@ try {
         Write-Host "    $($sshText.Trim())"
     }
     elseif ($sshText -match 'Permission denied') {
-        throw @'
-SSH reached GitHub but the key is not authorized yet.
-Add this public key to https://github.com/settings/ssh/new :
-    Get-Content "$env:USERPROFILE\.ssh\id_ed25519_codexpotter_relay.pub"
-'@
+        Write-Host 'SSH reached GitHub but this key is not authorized yet.' -ForegroundColor Yellow
+        Write-Host 'Add the public key below to https://github.com/settings/ssh/new, then re-run:'
+        Write-Host ''
+        Get-Content "$env:USERPROFILE\.ssh\id_ed25519_codexpotter_relay.pub"
+        exit 1
     }
     else {
         throw "cannot reach git@github.com over SSH: $($sshText.Trim())"
