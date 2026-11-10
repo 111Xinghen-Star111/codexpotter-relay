@@ -74,7 +74,7 @@ Context Monitor 采样上下文压力（真实 token 用量 / 模拟注入 / 回
 | Codex CLI | 需包含 `app-server` 子命令 | 本机实测版本 `0.167.0-alpha.3.2` |
 | 账号 | ChatGPT 账号已登录 | `relay doctor` 会调用 `codex login status` 检查 |
 
-Codex 可执行文件的查找顺序（`relay/codex_env.py`）：`controller.codex_executable` → 环境变量 `CODEXPOTTER_CODEX` → `PATH` 上的 `codex` → `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`（按体积取最新）→ `%LOCALAPPDATA%\Programs\codex\codex.exe`。
+Codex 可执行文件的解析顺序（`relay/codex_env.py`）：全局参数 `--codex`（写入 `controller.codex_executable`）→ `controller.codex_executable` → 环境变量 `CODEXPOTTER_CODEX` → `PATH` 上的 `codex` → `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`（按体积取最新）→ `%LOCALAPPDATA%\Programs\codex\codex.exe`。
 
 ## 安装
 
@@ -99,20 +99,20 @@ relay doctor
 | 参数 | 作用 |
 | --- | --- |
 | `-Python <path>` | 指定 python.exe，跳过自动探测 |
-| `-Codex <path>` | 指定 codex.exe（等价于 `relay --codex <path> doctor`） |
+| `-Codex <path>` | 指定 codex.exe；脚本会传给 `relay doctor`（参数位置有已知问题，见下方） |
 | `-WithHooks` | 额外写入 Codex hooks 配置块（默认跳过） |
 | `-SkipPath` | 不修改用户 PATH |
 
-> Codex 不在 PATH 上时，全局参数 `--codex <path>` 可作用于任意子命令，例如
-> `relay --codex "C:\Users\<you>\AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe" doctor`；
-> 也可以写入 `relay.toml` 的 `[controller] codex_executable` 或环境变量 `CODEXPOTTER_CODEX`。
+> **注意**：`-Codex` 被拼成 `relay doctor --codex <path>`，而 `--codex` 是全局参数、必须写在子命令之前，因此该调用会以 “unrecognized arguments” 退出（退出码 2），脚本随即报 “Codex CLI is not usable”。需要指定 Codex 路径时，改用
+> `relay --codex "C:\Users\Public\AppData\Local\OpenAI\Codex\bin\5449c1f0f26f1f98\codex.exe" doctor`（全局参数也可作用于任意子命令），
+> 或写入 `relay.toml` 的 `[controller] codex_executable` / 环境变量 `CODEXPOTTER_CODEX`。详见 [docs/未验证与已知限制.md](docs/未验证与已知限制.md)。
 
 手工安装等价步骤（不使用脚本时）：
 
 ```powershell
 python -m pip install -e .
 relay init
-relay hooks install
+relay hooks install   # 可选；Codex 0.167 不执行 [hooks]，状态采集靠 app-server 通知
 # 若 relay 命令不在 PATH，可直接用模块方式调用：python -m relay <子命令>
 ```
 
@@ -149,7 +149,7 @@ relay pause --chain ch_1a2b3c4d5e6f
 
 # 7. 恢复：resume 只改数据库状态，还需要重新启动控制器才会继续执行
 relay resume --chain ch_1a2b3c4d5e6f
-relay run --chain ch_1a2b3c4d5e6f
+relay recover --chain ch_1a2b3c4d5e6f   # 也可用 relay run --chain ch_1a2b3c4d5e6f
 
 # 8. 查看报告（Markdown，写入 %LOCALAPPDATA%\CodexPotterRelay\reports\）
 relay report --chain ch_1a2b3c4d5e6f
@@ -159,12 +159,13 @@ relay report --chain ch_1a2b3c4d5e6f
 
 ## 命令参考
 
-所有子命令都接受三个全局参数：
+所有子命令都接受四个全局参数，且**必须写在子命令之前**（`relay --json status`，不是 `relay status --json`）：
 
 | 全局参数 | 默认 | 作用 |
 | --- | --- | --- |
 | `--config PATH` | `%LOCALAPPDATA%\CodexPotterRelay\relay.toml` | 指定配置文件 |
-| `--db PATH` | `%LOCALAPPDATA%\CodexPotterRelay\relay.db` | 覆盖数据库路径（`init/run/status/chains/checkpoint/handoff/pause/resume/stop/history/report` 使用） |
+| `--db PATH` | `%LOCALAPPDATA%\CodexPotterRelay\relay.db` | 覆盖数据库路径（`init/run/recover/status/chains/checkpoint/handoff/pause/resume/stop/history/report` 使用） |
+| `--codex PATH` | 自动探测 | 指定 codex 可执行文件，覆盖 `controller.codex_executable` 与自动探测 |
 | `--json` | 关闭 | 输出机器可读 JSON 而不是文本 |
 
 退出码：`0` 成功；`1` 运行失败或测试未通过；`2` 配置错误或参数错误。
@@ -258,7 +259,7 @@ relay report --chain ch_1a2b3c4d5e6f
 
 | 命令 | 参数 | 作用 |
 | --- | --- | --- |
-| `relay hooks install` | — | 把托管块写入 `%USERPROFILE%\.codex\config.toml`（首次会备份为 `config.toml.relay-backup`），并用 `hooks/list` 回读 Codex 实际注册到的事件 |
+| `relay hooks install` | — | 把托管块写入 `%USERPROFILE%\.codex\config.toml`（首次备份为 `config.toml.relay-backup`），随后用 `codex app-server --print-startup-config` 校验配置仍可解析（失败则回滚并返回 `installed=false`），再用 `hooks/list` 回读 Codex 实际注册的事件 |
 | `relay hooks uninstall` | — | 移除托管块；配置块清空时恢复备份 |
 | `relay hooks status` | — | 显示配置文件路径、托管块是否存在、实际观测到的 hook 事件（`--json` 还会给出请求注册的事件清单与 `hooks/list` 原始结果） |
 | `relay hook` | `--event NAME`（必填）、`--db PATH` | （内部）从 stdin 读取 JSON 载荷并写入 `events` 表；始终退出 0，保证 hook 不会中断 turn |
@@ -440,7 +441,7 @@ relay test --mode real-pressure
 
 ```powershell
 relay test-report                        # 汇总测试库最近 20 条链，模式默认 real-handoff
-relay test-report --chain ch_xxx --mode mock
+relay test-report --chain ch_1a2b3c4d5e6f --mode mock
 ```
 
 每次测试自动生成独立工作链、独立临时项目并保留日志；`--keep-workspaces` 可保留临时项目以便复盘。失败会立即停止，所有层级都受 turn / 交接 / 模型请求预算约束，不会无限重试。人工取消可直接中断进程，链上的中止记录仍留在测试库中。
@@ -459,27 +460,37 @@ relay test-report --chain ch_xxx --mode mock
 
 2. 每层测试结束都会写出报告到 `%LOCALAPPDATA%\CodexPotterRelay\reports\`，文件名形如 `test-mock-20260101-120000.md`；交互式输出同时打印每一项 `[PASS]/[FAIL]` 与总结论。
 3. 需要重新汇总时执行 `relay test-report --mode real-handoff`，它读取测试库、重新渲染报告，不需要重跑测试。
-4. 当次的真实结果由开发者记录在 `docs/测试结果.md`。该文件**可能不存在**；若不存在，说明当次结果尚未记录，请以第 2 步新生成的报告为准，不要引用旧结论。
+4. 当次的真实结果记录在 [`docs/测试结果.md`](docs/测试结果.md)：里面写明每条判定项的 PASS/FAIL、真实主会话 thread id、模型请求次数与报告文件路径。**引用结论前请先看该文件的记录时间与代码提交**，不要拿旧结论套新代码。
 
 Level 2 与 Level 3 依赖真实 Codex 额度、真实账号登录和网络，结论会随环境变化；未记录或未运行的部分一律视为「待验证」，见 [docs/未验证与已知限制.md](docs/未验证与已知限制.md)。
 
+单元测试补充（不替代三层测试）：`tests/` 下有针对配置解析、数据库、检查点、上下文监测与 hooks 的用例，可先安装 pytest 再执行 `python -m pytest`；它不覆盖控制器主循环与真实会话接力。
+
 ## 故障恢复
+
+控制器不依赖任何 Codex 会话存活，崩溃后按数据库 + 检查点 + 台账恢复即可。详细说明见 [docs/恢复指南.md](docs/恢复指南.md)。
 
 场景一：控制器崩溃或被杀。
 
 ```powershell
-# 1. 看链的状态、活动会话、最近检查点；执行锁的 pid/host 在 --json 输出里
-relay status --chain ch_1a2b3c4d5e6f
-relay status --chain ch_1a2b3c4d5e6f --json | Select-String -Pattern "owner_pid|owner_host"
-relay status --chain ch_1a2b3c4d5e6f --events 30
+# 1. 先看清楚哪些链需要恢复、执行锁归谁（不会真的启动控制器）
+relay recover --dry-run
 
-# 2. 若链停在 running 或 handoff，且锁的持有进程已死，直接重新驱动
-relay run --chain ch_1a2b3c4d5e6f
+# 2. 逐条恢复并继续执行（也可用 --chain 只恢复一条）
+relay recover
+relay recover --chain ch_1a2b3c4d5e6f
+
+# 3. 需要看细节时
+relay status --chain ch_1a2b3c4d5e6f
+relay --json status --chain ch_1a2b3c4d5e6f | Select-String -Pattern "owner_pid|owner_host"
+relay status --chain ch_1a2b3c4d5e6f --events 30
 ```
 
+- `recover` 会把处于 `running` / `handoff` 的链逐个接管；`--max-turns`、`--max-handoffs`、`--max-model-requests` 可覆盖本次恢复的预算。
 - 恢复时优先读 `<项目>\.relay\state.json`；如果台账缺失或损坏，就回退到**最新通过校验的检查点**，把 `HANDOFF.md` 与 `state.json` 重新写回磁盘，并记一条 `state_restored` / `ledger_repaired` 事件。
-- 执行锁回收：`execution_locks` 里同主机、pid 已不存在的锁会被视为陈旧并自动替换；跨主机的锁不会被自动回收，需要用 SQL 删除该行后再 `relay run`（这属于多机写入保护，不建议绕过）。
-- 崩溃发生在交接中途时，链停在 `handoff`，`active_session_id` 仍是旧会话；重新 `relay run` 会从旧会话继续并在需要时重新发起交接。失败的交接记录以 `failed` 或 `rolled_back` 保留在台账里。
+- 崩溃发生在交接中途时，链停在 `handoff`，`active_session_id` 仍是旧会话；恢复会把未完成的交接标记为 `failed`、把链退回 `running`（事件 `handoff_recovered`），PREPARE 写下的检查点保留，写权限继续留在原会话上。
+- 执行锁回收：`execution_locks` 里同主机、pid 已不存在的锁会被视为陈旧并自动替换；跨主机的锁不会被自动回收，需要用 SQL 删除该行后再恢复（这是多机写入保护，不建议绕过）。
+- `relay recover` 与 `relay run --chain ch_1a2b3c4d5e6f` 都可以重新驱动一条链；`run` 是单链的前台入口，`recover` 还会做恢复前的整理与汇总。
 
 场景二：人工暂停后继续。
 
@@ -515,7 +526,7 @@ relay hooks uninstall
 
 参数：`-Python <path>` 指定解释器；`-Purge` 删除 `%LOCALAPPDATA%\CodexPotterRelay`（不加则保留，因为那是历史工作链的唯一记录）。
 
-> 生成的 hooks 托管块里写着 “Remove with `relay uninstall`”，这是注释文案；当前 CLI 没有 `uninstall` 子命令，请使用 `relay hooks uninstall` 或上面的脚本。
+> 托管块第一行注释已写明：Codex 0.167 不执行 `config.toml` 里的 `[hooks]` 段，状态采集同时依赖 app-server 通知；移除托管块请用 `relay hooks uninstall` 或上面的脚本。
 
 项目侧残留：受管项目里会留下 `.relay/` 目录与 `.gitignore` 中的 `.relay/` 一行，以及 `relay/<chain_id>` 分支。是否删除由你决定，Relay 不会自动清理用户项目。
 

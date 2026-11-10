@@ -71,11 +71,12 @@ Write-Host "    git: $gitPath"
 
 # ---------------------------------------------------------------- Codex
 Write-Step 'Locating the Codex CLI'
+# --codex is a global option, so it must come before the subcommand.
 $codexArgs = @()
 if ($Codex) { $codexArgs += @('--codex', $Codex) }
 Push-Location $repoRoot
 try {
-    $doctorOutput = & $pythonPath -m relay doctor @codexArgs 2>&1
+    $doctorOutput = & $pythonPath -m relay @codexArgs doctor 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host ($doctorOutput | Out-String)
         Fail 'Codex CLI is not usable. Install Codex and sign in, then re-run the installer.'

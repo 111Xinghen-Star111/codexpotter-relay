@@ -219,6 +219,22 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX model_requests_chain ON model_requests(chain_id)",
         ),
     ),
+    Migration(
+        version=2,
+        description="correct the simulated flag on real-session test requests",
+        statements=(
+            # Level 2/3 chains call the real model; only their *pressure signal*
+            # is simulated. Older rows were flagged as simulated requests.
+            """
+            UPDATE model_requests
+               SET simulated = 0
+             WHERE chain_id IN (
+                   SELECT id FROM chains
+                    WHERE test_level IN ('real-handoff', 'real-pressure')
+             )
+            """,
+        ),
+    ),
 )
 
 

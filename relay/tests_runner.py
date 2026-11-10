@@ -599,8 +599,10 @@ def run_level3(
     _init_project(root)
     started = time.monotonic()
 
-    window = config.testing.context_window_override or 24_000
-    compact_limit = config.testing.auto_compact_token_limit or int(window * 0.75)
+    #: A deliberately small (but above the fixed prompt size) window, so real
+    #: usage grows into the threshold instead of already exceeding it.
+    window = config.testing.context_window_override or 64_000
+    compact_limit = config.testing.auto_compact_token_limit or int(window * 0.80)
     pressure_config = config.with_testing_overrides(
         enabled=True,
         simulate_context_pressure=False,

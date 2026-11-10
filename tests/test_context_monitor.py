@@ -35,6 +35,18 @@ class RealRatioTests(unittest.TestCase):
         self.assertAlmostEqual(sample.ratio, 0.4)
         self.assertFalse(sample.simulated)
 
+    def test_cached_prompt_tokens_are_not_double_counted(self) -> None:
+        # inputTokens already contains the cached prefix; adding cached again
+        # would report a window that is twice as full as it really is.
+        usage = TokenUsage(
+            input_tokens=40_000,
+            cached_input_tokens=38_000,
+            output_tokens=1_000,
+            context_window=100_000,
+        )
+        self.assertEqual(usage.context_used_tokens(), 41_000)
+        self.assertAlmostEqual(usage.context_ratio(), 0.41)
+
     def test_missing_window_yields_no_ratio(self) -> None:
         sample = self.monitor.sample(state_with_usage(40_000, None))
         self.assertIsNone(sample.ratio)

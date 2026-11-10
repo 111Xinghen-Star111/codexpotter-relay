@@ -62,8 +62,13 @@ class TokenUsage:
         )
 
     def context_used_tokens(self) -> int:
-        """Return the tokens currently occupying the context window."""
-        return self.input_tokens + self.cached_input_tokens
+        """Return the tokens currently occupying the context window.
+
+        ``inputTokens`` already includes the cached prefix, so cached tokens must
+        **not** be added again: doing so double-counts the prompt and inflates
+        the ratio. Output tokens do occupy the window, so they are added.
+        """
+        return self.input_tokens + self.output_tokens
 
     def context_ratio(self) -> float | None:
         """Return the context fill ratio, or None when it cannot be computed."""
@@ -116,6 +121,9 @@ class TurnOutcome:
 
 class CodexAgent:
     """Owns an :class:`AppServer` connection and per-thread observations."""
+
+    #: A real session always calls the model and therefore consumes quota.
+    is_mock = False
 
     def __init__(
         self,

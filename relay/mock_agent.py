@@ -57,6 +57,9 @@ class MockBehaviour:
 class MockAgent:
     """Deterministic stand-in for :class:`CodexAgent`."""
 
+    #: The mock never calls the model, so its requests do not consume quota.
+    is_mock = True
+
     def __init__(
         self,
         *,

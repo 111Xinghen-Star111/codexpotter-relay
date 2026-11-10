@@ -175,19 +175,14 @@ class GitRepository:
         self._run("config", "user.email", email)
 
     def snapshot(self) -> GitSnapshot:
-        """Return the current branch, head commit and dirty flag."""
-        branch = self._run("rev-parse", "--abbrev-ref", "HEAD").strip()
+        """Return the current branch, head commit and dirty flag.
+
+        Works on an unborn branch (a repository with no commits yet), which is
+        what ``relay start`` sees in a brand new project directory.
+        """
+        branch = self._current_branch()
         status_text = self._run("status", "--porcelain").strip()
-        head_result = subprocess.run(
-            [self._git, "rev-parse", "HEAD"],
-            cwd=str(self.path),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
-        head = head_result.stdout.strip() if head_result.returncode == 0 else None
+        head = self._rev_parse("HEAD")
         return GitSnapshot(
             branch=branch,
             head=head,
@@ -195,6 +190,38 @@ class GitRepository:
             status_text=status_text,
             has_commits=head is not None,
         )
+
+    def _current_branch(self) -> str:
+        """Return the checked-out branch name, even before the first commit."""
+        for arguments in (("symbolic-ref", "--short", "HEAD"), ("rev-parse", "--abbrev-ref", "HEAD")):
+            completed = subprocess.run(
+                [self._git, *arguments],
+                cwd=str(self.path),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if completed.returncode == 0 and completed.stdout.strip():
+                return completed.stdout.strip()
+        return "HEAD"
+
+    def _rev_parse(self, revision: str) -> str | None:
+        """Return the commit hash for ``revision``, or None when it is unborn."""
+        completed = subprocess.run(
+            [self._git, "rev-parse", "--verify", "--quiet", revision],
+            cwd=str(self.path),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+        value = completed.stdout.strip()
+        return value or None
 
     def ensure_branch(self, branch: str) -> None:
         """Create ``branch`` if needed and check it out."""
@@ -225,6 +252,18 @@ class GitRepository:
         if not status:
             return None
         self._run("commit", "-m", message)
+        return self.snapshot().head
+
+    def commit_paths(self, message: str, paths: list[str]) -> str | None:
+        """Commit only ``paths`` so unrelated user changes stay uncommitted."""
+        existing = [path for path in paths if (self.path / path).exists()]
+        if not existing:
+            return None
+        self._run("add", "--", *existing)
+        staged = self._run("diff", "--cached", "--name-only").strip()
+        if not staged:
+            return None
+        self._run("commit", "-m", message, "--", *existing)
         return self.snapshot().head
 
     def head(self) -> str | None:

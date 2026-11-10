@@ -139,6 +139,8 @@ class RelayController:
         self._state: dict[str, Any] | None = None
         self._last_validation: ValidationReport | None = None
         self._started_at = time.monotonic()
+        #: True only for the mock driver; a real session always costs quota.
+        self._driver_is_mock = bool(getattr(driver, "is_mock", False))
 
     # ------------------------------------------------------------------
     # chain construction
@@ -434,6 +436,10 @@ class RelayController:
         git.ensure_branch(chain.work_branch)
         if not git.snapshot().has_commits:
             git.commit_all("chore: initialise relay work chain")
+        else:
+            # Keep the repository clean without touching the user's own changes:
+            # only the relay-generated .gitignore entry is committed.
+            git.commit_paths("chore: ignore relay bookkeeping", [".gitignore"])
         self._log(
             "info",
             "environment ready",
@@ -587,7 +593,7 @@ class RelayController:
         self._check_budgets(chain)
         session = self.db.get_session(session_id)
         self.db.record_model_request(
-            chain_id=chain.id, session_id=session_id, simulated=self.monitor.simulating
+            chain_id=chain.id, session_id=session_id, simulated=self._driver_is_mock
         )
         self.db.update_session(
             session_id, state="writing", request_count=session.request_count + 1
