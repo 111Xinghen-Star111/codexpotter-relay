@@ -25,7 +25,7 @@ param(
     [switch]$DryRun
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $git = (Get-Command git -ErrorAction SilentlyContinue).Source
 if (-not $git) {
@@ -53,8 +53,7 @@ try {
     }
 
     Write-Step 'Checking SSH access to GitHub (port 443)'
-    $sshCheck = & ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1
-    $sshText = ($sshCheck | Out-String)
+    $sshText = (& ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1 | Out-String)
     if ($sshText -match 'successfully authenticated') {
         Write-Host "    $($sshText.Trim())"
     }
@@ -71,12 +70,12 @@ Add this public key to https://github.com/settings/ssh/new :
 
     $url = "git@github.com:$Owner/$Repo.git"
     Write-Step "Checking the remote repository $Owner/$Repo"
-    $remoteHead = & $git ls-remote --heads $url $Branch 2>&1
+    $remoteHead = (& $git ls-remote --heads $url $Branch 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) {
         throw "cannot read $url (does the private repository exist?): $remoteHead"
     }
-    if ($remoteHead) {
-        $remoteSha = ($remoteHead -split '\s+')[0]
+    if ($remoteHead.Trim()) {
+        $remoteSha = ($remoteHead.Trim() -split '\s+')[0]
         Write-Host "    remote $Branch is at $($remoteSha.Substring(0, 7))"
         $isAncestor = & $git merge-base --is-ancestor $remoteSha $head 2>$null
         if ($LASTEXITCODE -ne 0) {
@@ -95,7 +94,7 @@ Add this public key to https://github.com/settings/ssh/new :
     }
 
     Write-Step 'Configuring the remote'
-    $existing = & $git remote get-url $RemoteName 2>$null
+    $existing = (& $git remote get-url $RemoteName 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -eq 0) {
         if ($existing -ne $url) {
             throw "remote '$RemoteName' already points at $existing; refusing to repoint it"
@@ -112,8 +111,9 @@ Add this public key to https://github.com/settings/ssh/new :
     if ($LASTEXITCODE -ne 0) { throw 'git push failed' }
 
     Write-Step 'Verifying the remote'
-    $verify = & $git ls-remote --heads $url $Branch
-    $verifySha = ($verify -split '\s+')[0]
+    $verify = (& $git ls-remote --heads $url $Branch 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "cannot verify $url after push: $verify" }
+    $verifySha = ($verify.Trim() -split '\s+')[0]
     if ($verifySha -ne $head) {
         throw "remote head $verifySha does not match local head $head"
     }
