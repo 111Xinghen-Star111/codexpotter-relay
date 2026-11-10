@@ -193,6 +193,51 @@ class CodexAgent:
         response = self._app.request("thread/read", {"threadId": thread_id})
         return response.get("thread") or {}
 
+    def attach_thread(
+        self,
+        thread_id: str,
+        *,
+        cwd: Path | None = None,
+        sandbox: str | None = None,
+        approval_policy: str | None = None,
+        approvals_reviewer: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Load an existing thread into this app-server process.
+
+        ``thread/start`` is the only way a *new* session is created; this method
+        exists for a different job: after a controller restart the thread still
+        lives on disk, but a freshly spawned app server has never loaded it, so
+        ``turn/start`` would fail. Resuming the same thread keeps the session
+        count unchanged and is therefore not a substitute for a handoff.
+        """
+        params: dict[str, Any] = {"threadId": thread_id}
+        if cwd:
+            params["cwd"] = str(cwd)
+        if sandbox:
+            params["sandbox"] = sandbox
+        if approval_policy:
+            params["approvalPolicy"] = approval_policy
+        if approvals_reviewer:
+            params["approvalsReviewer"] = approvals_reviewer
+        if config_overrides:
+            params["config"] = config_overrides
+        response = self._app.request("thread/resume", params)
+        thread = response.get("thread") or {}
+        if not thread.get("id"):
+            raise SessionError(f"thread/resume returned no thread for {thread_id}")
+        turns = thread.get("turns") or []
+        state = self.thread_state(thread_id)
+        with state.condition:
+            state.turn_count = max(state.turn_count, len(turns))
+        self._log(
+            "info",
+            "reattached existing session",
+            thread_id=thread_id,
+            turns=len(turns),
+        )
+        return thread
+
     def thread_state(self, thread_id: str) -> ThreadState:
         """Return the live state for ``thread_id``, creating a placeholder if needed."""
         with self._lock:

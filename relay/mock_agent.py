@@ -125,6 +125,12 @@ class MockAgent:
             "turns": [{"id": turn_id, "status": "completed"} for turn_id in turns],
         }
 
+    def attach_thread(self, thread_id: str, **_: Any) -> dict[str, Any]:
+        """Reattach a mock thread; raises when the thread is unknown to the run."""
+        if thread_id not in self._threads:
+            raise RuntimeError(f"mock thread not found: {thread_id}")
+        return self.read_thread(thread_id)
+
     def thread_state(self, thread_id: str) -> ThreadState:
         """Return the mock thread's live state."""
         with self._lock:

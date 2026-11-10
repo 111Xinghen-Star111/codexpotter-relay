@@ -142,6 +142,8 @@ class RelayController:
         self._started_at = time.monotonic()
         #: True only for the mock driver; a real session always costs quota.
         self._driver_is_mock = bool(getattr(driver, "is_mock", False))
+        #: Task ids already observed as ``done``; used to checkpoint progress.
+        self._done_task_ids: set[str] = set()
 
     # ------------------------------------------------------------------
     # chain construction
@@ -266,6 +268,9 @@ class RelayController:
             # finish without any checkpoint. Writing one at the start gives
             # crash recovery and the report a git-anchored baseline.
             self._write_checkpoint(chain, git, reason="initial")
+
+        if chain.active_session_id:
+            chain = self._reattach_active_session(chain)
         sessions_seen: set[str] = {session.id for session in self.db.main_sessions(chain.id)}
         stop_reason = "loop finished"
         validation: ValidationReport | None = None
@@ -352,6 +357,12 @@ class RelayController:
                 and self.config.relay.auto_handoff
                 and handoffs_done < self.budget.max_handoffs
             )
+            newly_done = self._take_newly_done_tasks(self._state)
+            if newly_done and not will_handoff:
+                # Anchor each finished task in a checkpoint so a crash together
+                # with a damaged ledger cannot roll completed work back.
+                self._write_checkpoint(chain, git, reason=f"task:{newly_done[-1]}")
+                self._turns_since_checkpoint = 0
             if (
                 decision.at_least_checkpoint
                 and self._turns_since_checkpoint > 0
@@ -429,6 +440,59 @@ class RelayController:
         return self.db.transition_chain(
             chain.id, "running", reason="recovered from interrupted handoff"
         )
+
+    def _reattach_active_session(self, chain: Chain) -> Chain:
+        """Load the chain's live thread into the current app-server process.
+
+        A restarted controller gets a fresh app server that has never seen the
+        existing thread, so every ``turn/start`` would fail. Resuming keeps the
+        same session (no new context). If the thread is really gone, the chain
+        continues on a brand new session instead of silently replanning from
+        stale state.
+        """
+        session_id = chain.active_session_id
+        if not session_id:
+            return chain
+        attach = getattr(self.driver, "attach_thread", None)
+        if attach is None:
+            return chain
+        try:
+            attach(
+                session_id,
+                cwd=Path(chain.project_root),
+                sandbox=self.config.controller.sandbox,
+                approval_policy=self.config.controller.approval_policy,
+                approvals_reviewer=self.config.controller.approvals_reviewer,
+                config_overrides=self._session_config_overrides() or None,
+            )
+        except Exception as error:  # noqa: BLE001 - a lost thread is recoverable
+            self._log(
+                "warning",
+                "active session could not be reattached; starting a new one",
+                chain_id=chain.id,
+                session_id=session_id,
+                error=str(error),
+            )
+            self.db.update_session(
+                session_id, state="failed", ended_at=time.time(), touch=False
+            )
+            self.db.append_event(
+                event_key=f"{chain.id}:session-lost:{session_id}",
+                kind="session_lost",
+                source="controller",
+                payload={"session_id": session_id, "error": str(error)},
+                chain_id=chain.id,
+                session_id=session_id,
+            )
+            self.db.update_chain(chain.id, active_session_id=None)
+            return self.db.get_chain(chain.id)
+        self._log(
+            "info",
+            "active session reattached",
+            chain_id=chain.id,
+            session_id=session_id,
+        )
+        return chain
 
     # ------------------------------------------------------------------
     # environment
@@ -509,6 +573,17 @@ class RelayController:
         self._sync_tasks(chain, state)
         return state
 
+    def _take_newly_done_tasks(self, state: dict[str, Any]) -> list[str]:
+        """Return task ids that became ``done`` since the previous turn."""
+        done_now = {
+            str(task.get("id"))
+            for task in state.get("tasks") or []
+            if task.get("status") == "done"
+        }
+        new_ids = sorted(done_now - self._done_task_ids)
+        self._done_task_ids |= done_now
+        return new_ids
+
     def _sync_tasks(self, chain: Chain, state: dict[str, Any]) -> None:
         """Mirror the ledger's task statuses into the database."""
         for task in state.get("tasks") or []:
@@ -562,7 +637,13 @@ class RelayController:
     # sessions and turns
     # ------------------------------------------------------------------
     def _start_initial_session(self, chain: Chain) -> str:
-        """Create session #1 of the chain."""
+        """Create the chain's first session, or the next one if a session was lost."""
+        existing = [
+            session.ordinal
+            for session in self.db.main_sessions(chain.id)
+            if session.ordinal is not None
+        ]
+        ordinal = (max(existing) + 1) if existing else 1
         overrides = self._session_config_overrides()
         thread_id = self.driver.start_thread(
             model=self.config.relay.model,
@@ -577,7 +658,7 @@ class RelayController:
             session_id=thread_id,
             chain_id=chain.id,
             role="main",
-            ordinal=1,
+            ordinal=ordinal,
             model=self.config.relay.model,
             state="active",
             metadata={"simulated_pressure": self.monitor.simulating},
@@ -587,12 +668,18 @@ class RelayController:
             event_key=f"{chain.id}:session-started:{thread_id}",
             kind="session_started",
             source="controller",
-            payload={"session_id": thread_id, "ordinal": 1},
+            payload={"session_id": thread_id, "ordinal": ordinal},
             chain_id=chain.id,
             session_id=thread_id,
             simulated=self.monitor.simulating,
         )
-        self._log("info", "initial session started", chain_id=chain.id, session_id=thread_id)
+        self._log(
+            "info",
+            "session started",
+            chain_id=chain.id,
+            session_id=thread_id,
+            ordinal=ordinal,
+        )
         return thread_id
 
     def _run_work_turn(self, chain: Chain, session_id: str, prompt: str) -> TurnOutcome:

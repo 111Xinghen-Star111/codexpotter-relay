@@ -94,8 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--no-auto-handoff", action="store_true", help="collect only, never hand off")
     start.add_argument("--detach", action="store_true", help="run the controller detached")
 
-    run = subparsers.add_parser("run", help="(internal) run the controller for an existing chain")
+    run = subparsers.add_parser("run", help="run the controller for an existing chain")
     run.add_argument("--chain", required=True)
+    run.add_argument("--max-turns", type=int, default=None)
+    run.add_argument("--max-handoffs", type=int, default=None)
+    run.add_argument("--max-model-requests", type=int, default=None)
+    run.add_argument("--detach", action="store_true", help="run the controller detached")
 
     subparsers.add_parser("chains", help="list work chains")
     status = subparsers.add_parser("status", help="show chain status")
@@ -310,6 +314,8 @@ def _cmd_start(arguments: argparse.Namespace) -> int:
 def _cmd_run(arguments: argparse.Namespace) -> int:
     config = _resolve_config(arguments)
     database = _resolve_database(arguments)
+    if arguments.detach:
+        return _spawn_detached(arguments, arguments.chain)
     return _run_controller(config, database, arguments.chain, arguments)
 
 
@@ -627,9 +633,11 @@ def _run_controller(
     logger = _logger("controller")
     chain = database.get_chain(chain_id)
     budget = Budget(
-        max_turns=arguments.max_turns or config.relay.max_turns,
-        max_handoffs=arguments.max_handoffs or config.relay.max_handoffs,
-        max_model_requests=arguments.max_model_requests or config.relay.max_model_requests,
+        max_turns=getattr(arguments, "max_turns", None) or config.relay.max_turns,
+        max_handoffs=getattr(arguments, "max_handoffs", None) or config.relay.max_handoffs,
+        max_model_requests=(
+            getattr(arguments, "max_model_requests", None) or config.relay.max_model_requests
+        ),
         max_token_total=config.relay.token_budget,
     )
     codex = find_codex_executable(config.controller.codex_executable)
@@ -690,6 +698,10 @@ def _spawn_detached(arguments: argparse.Namespace, chain_id: str) -> int:
     if arguments.db:
         command.extend(["--db", str(arguments.db)])
     command.extend(["run", "--chain", chain_id])
+    for flag in ("max_turns", "max_handoffs", "max_model_requests"):
+        value = getattr(arguments, flag, None)
+        if value:
+            command.extend(["--" + flag.replace("_", "-"), str(value)])
     with open(log_file, "a", encoding="utf-8") as handle:
         process = subprocess.Popen(
             command,
