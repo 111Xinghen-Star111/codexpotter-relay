@@ -27,7 +27,15 @@ from .config import ConfigError, RelayConfig, load_config, write_default_config
 from .db import Database, canonical_json
 from .hooks import ALL_EVENTS, HookInstaller
 from .logging_setup import configure_logging
-from .ops import capture_checkpoint, doctor, manual_handoff, pause_chain, resume_chain, stop_chain
+from .ops import (
+    capture_checkpoint,
+    doctor,
+    make_event_sink,
+    manual_handoff,
+    pause_chain,
+    resume_chain,
+    stop_chain,
+)
 from .report import write_chain_report
 from .tests_runner import LEVEL1, LEVEL2, LEVEL3, TestOutcome, run_level1, run_level2, run_level3
 
@@ -58,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=Path, default=None, help="configuration file path")
     parser.add_argument("--db", type=Path, default=None, help="database path override")
+    parser.add_argument(
+        "--codex", default=None, metavar="PATH", help="Codex CLI executable (overrides detection)"
+    )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -126,6 +137,15 @@ def build_parser() -> argparse.ArgumentParser:
     test_report.add_argument("--chain", default=None)
     test_report.add_argument("--mode", default=LEVEL2, choices=[LEVEL1, LEVEL2, LEVEL3])
 
+    recover = subparsers.add_parser(
+        "recover", help="resume chains that were left mid-flight by a stopped controller"
+    )
+    recover.add_argument("--chain", default=None)
+    recover.add_argument("--dry-run", action="store_true")
+    recover.add_argument("--max-turns", type=int, default=None)
+    recover.add_argument("--max-handoffs", type=int, default=None)
+    recover.add_argument("--max-model-requests", type=int, default=None)
+
     hooks = subparsers.add_parser("hooks", help="install or remove the hook collector")
     hooks.add_argument("action", choices=["install", "uninstall", "status"])
 
@@ -164,7 +184,17 @@ def _configure_console_encoding() -> None:
 
 
 def _resolve_config(arguments: argparse.Namespace) -> RelayConfig:
-    return load_config(arguments.config)
+    config = load_config(arguments.config)
+    codex_override = getattr(arguments, "codex", None)
+    if codex_override:
+        from dataclasses import replace
+
+        config = replace(
+            config,
+            controller=replace(config.controller, codex_executable=codex_override),
+        )
+        config.validate()
+    return config
 
 
 def _resolve_database(arguments: argparse.Namespace) -> Database:
@@ -205,6 +235,8 @@ def _dispatch(parser: argparse.ArgumentParser, arguments: argparse.Namespace) ->
         return _cmd_test_handoff(arguments)
     if command == "test-report":
         return _cmd_test_report(arguments)
+    if command == "recover":
+        return _cmd_recover(arguments)
     if command == "hooks":
         return _cmd_hooks(arguments)
     if command == "hook":
@@ -507,6 +539,33 @@ def _cmd_test_report(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_recover(arguments: argparse.Namespace) -> int:
+    """Resume chains that a previous controller left in ``running``/``handoff``."""
+    database = _resolve_database(arguments)
+    if arguments.chain:
+        candidates = [database.get_chain(arguments.chain)]
+    else:
+        candidates = database.chains_needing_recovery()
+    if not candidates:
+        print("没有需要恢复的工作链 / nothing to recover")
+        return 0
+    lines = ["待恢复工作链 / chains to recover:"]
+    for chain in candidates:
+        lock = database.lock_owner(chain.id)
+        lines.append(f"  {chain.id}  state={chain.state:<8} lock={lock or 'free'}")
+    print("\n".join(lines))
+    if arguments.dry_run:
+        return 0
+    config = _resolve_config(arguments)
+    failures = 0
+    for chain in candidates:
+        print(f"--- resuming {chain.id}")
+        code = _run_controller(config, database, chain.id, arguments)
+        if code != 0:
+            failures += 1
+    return 0 if failures == 0 else 1
+
+
 def _cmd_hooks(arguments: argparse.Namespace) -> int:
     installer = HookInstaller(database_path=paths.database_path("production"))
     if arguments.action == "install":
@@ -585,7 +644,12 @@ def _run_controller(
     )
     server.start()
     try:
-        agent = CodexAgent(server, project_root=Path(chain.project_root), logger=logger)
+        agent = CodexAgent(
+            server,
+            project_root=Path(chain.project_root),
+            logger=logger,
+            event_sink=make_event_sink(database, chain.id),
+        )
         controller = RelayController(
             config=config,
             database=database,

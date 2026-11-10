@@ -31,6 +31,7 @@ from .config import RelayConfig
 from .controller import Budget, RelayController
 from .db import Database
 from .mock_agent import MockAgent, MockBehaviour
+from .ops import make_event_sink
 from .paths import database_path, log_dir, test_workspace_root
 from .report import write_test_report
 
@@ -491,7 +492,12 @@ def run_level2(
     try:
         from .agent_session import CodexAgent
 
-        agent = CodexAgent(server, project_root=root, logger=logger)
+        agent = CodexAgent(
+            server,
+            project_root=root,
+            logger=logger,
+            event_sink=make_event_sink(database, chain.id),
+        )
         controller = RelayController(
             config=config,
             database=database,
@@ -638,7 +644,12 @@ def run_level3(
     try:
         from .agent_session import CodexAgent
 
-        agent = CodexAgent(server, project_root=root, logger=logger)
+        agent = CodexAgent(
+            server,
+            project_root=root,
+            logger=logger,
+            event_sink=make_event_sink(database, chain.id),
+        )
         controller = RelayController(
             config=pressure_config,
             database=database,

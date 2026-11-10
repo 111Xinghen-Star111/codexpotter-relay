@@ -328,6 +328,14 @@ def validate_state(state: Any, *, source: str = "state") -> None:
         raise CheckpointError(
             f"{source}: next_task_id {next_task!r} is not one of the declared tasks"
         )
+    decisions = state.get("decisions", [])
+    if not isinstance(decisions, list):
+        raise CheckpointError(f"{source}: decisions must be a list")
+    for index, decision in enumerate(decisions):
+        if not isinstance(decision, (str, dict)):
+            raise CheckpointError(
+                f"{source}: decision #{index} must be a string or an object"
+            )
 
 
 def default_state(
@@ -432,7 +440,9 @@ def build_handoff_markdown(
     decisions = state.get("decisions") or []
     if decisions:
         for decision in decisions[-10:]:
-            lines.append(f"- {decision.get('summary', decision)}")
+            summary = decision.get("summary") if isinstance(decision, dict) else str(decision)
+            if summary:
+                lines.append(f"- {summary}")
     else:
         lines.append("- (none recorded)")
     lines.extend(["", "## Acceptance", ""])

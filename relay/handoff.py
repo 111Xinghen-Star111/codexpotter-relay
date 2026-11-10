@@ -135,7 +135,7 @@ class HandoffManager:
         checkpoint: Checkpoint | None = None
         try:
             checkpoint = self._prepare(handoff)
-        except (CheckpointError, OSError) as error:
+        except Exception as error:  # noqa: BLE001 - a broken package must roll back, not crash
             return self._fail(
                 handoff,
                 error=f"PREPARE failed: {error}",
@@ -157,7 +157,7 @@ class HandoffManager:
                 self._verify(checkpoint, new_session_id)
                 self.db.update_handoff(handoff.id, phase="COMMIT", state="pending")
                 self._commit(checkpoint, new_session_id, previous_session)
-            except (HandoffError, CheckpointError, OSError, RuntimeError) as error:
+            except Exception as error:  # noqa: BLE001 - bounded retry, then rollback
                 last_error = f"attempt {attempt}: {error}"
                 self._log(
                     "warning",

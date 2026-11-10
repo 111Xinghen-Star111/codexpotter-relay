@@ -319,7 +319,9 @@ class Checkpoint:
     created_at: float
 
     def is_intact(self) -> bool:
-        """Return True when the stored checksum still matches the content."""
+        """Return True when the stored content still matches its checksums."""
+        if sha256_text(self.handoff_md) != self.handoff_sha256:
+            return False
         expected = checkpoint_checksum(
             chain_id=self.chain_id,
             version=self.version,

@@ -148,18 +148,28 @@ def app_server_hook_events(database: Database, *, chain_id: str | None = None) -
 class HookInstaller:
     """Writes a removable hooks block into the Codex configuration."""
 
-    def __init__(self, *, python_executable: str | None = None, database_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        python_executable: str | None = None,
+        database_path: Path | None = None,
+        config_file: Path | None = None,
+        validate: bool = True,
+    ) -> None:
         self.python_executable = python_executable or sys.executable
         self.database_path = database_path
-        self.config_file = codex_home() / "config.toml"
+        self.config_file = config_file or (codex_home() / "config.toml")
         self.backup_file = self.config_file.with_suffix(".toml.relay-backup")
+        self.validate = validate
 
     def render_block(self) -> str:
         """Render the managed TOML block for every requested event."""
         lines = [MANAGED_BLOCK_START]
         lines.append(
-            "# Written by CodexPotter Relay. Remove with `relay uninstall` or\n"
-            "# `relay hooks uninstall`."
+            "# Written by CodexPotter Relay. Remove with `relay hooks uninstall`\n"
+            "# (or scripts\\uninstall.ps1). Codex 0.167 does not execute [hooks]\n"
+            "# entries from config.toml, so state capture also runs through\n"
+            "# app-server notifications."
         )
         for event in ALL_EVENTS:
             command = self._command_for(event)
@@ -185,23 +195,63 @@ class HookInstaller:
         return " ".join(parts)
 
     def install(self) -> dict[str, Any]:
-        """Write the managed block, backing up the previous config once."""
+        """Write the managed block, backing up the previous config once.
+
+        After writing, the Codex configuration is re-parsed. If Codex rejects
+        the file, the original content is restored so a failed install can never
+        leave a broken configuration behind.
+        """
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         existing = self.config_file.read_text(encoding="utf-8") if self.config_file.exists() else ""
         if MANAGED_BLOCK_START in existing:
+            previous = existing
             updated = self._replace_block(existing, self.render_block())
         else:
+            previous = existing
             if self.config_file.exists() and not self.backup_file.exists():
                 shutil.copy2(self.config_file, self.backup_file)
             prefix = existing if existing.endswith("\n") or not existing else existing + "\n"
             separator = "\n" if prefix.strip() else ""
             updated = prefix + separator + self.render_block()
         self.config_file.write_text(updated, encoding="utf-8")
+
+        if self.validate:
+            valid, message = self._config_parses()
+            if not valid:
+                self.config_file.write_text(previous, encoding="utf-8")
+                return {
+                    "installed": False,
+                    "config_file": str(self.config_file),
+                    "error": message,
+                    "restored": True,
+                }
         return {
+            "installed": True,
             "config_file": str(self.config_file),
             "backup_file": str(self.backup_file) if self.backup_file.exists() else None,
             "events": list(ALL_EVENTS),
         }
+
+    def _config_parses(self) -> tuple[bool, str]:
+        """Return whether Codex can still parse the configuration file."""
+        from .codex_env import find_codex_executable
+
+        try:
+            executable = find_codex_executable()
+        except Exception as error:  # noqa: BLE001 - reported, not raised
+            return False, f"codex executable not found: {error}"
+        completed = subprocess.run(
+            [str(executable), "app-server", "--print-startup-config"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+            check=False,
+        )
+        if completed.returncode == 0:
+            return True, "ok"
+        return False, ((completed.stdout or "") + (completed.stderr or "")).strip()[:1500]
 
     def uninstall(self) -> dict[str, Any]:
         """Remove the managed block, restoring the backup when nothing else remains."""

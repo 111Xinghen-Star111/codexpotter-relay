@@ -253,6 +253,7 @@ class RelayController:
         git = GitRepository(project_root, git_executable=self.git_executable)
         self._prepare_environment(git, chain)
 
+        chain = self._recover_inflight_handoff(chain)
         if chain.state == "pending":
             chain = self.db.transition_chain(chain.id, "running")
 
@@ -380,6 +381,45 @@ class RelayController:
             duration_seconds=time.monotonic() - self._started_at,
             validation=validation,
             report_path=report_path,
+        )
+
+    # ------------------------------------------------------------------
+    # recovery
+    # ------------------------------------------------------------------
+    def _recover_inflight_handoff(self, chain: Chain) -> Chain:
+        """Roll a crash-interrupted handoff back so the chain can continue.
+
+        A controller can die between START and COMMIT. Write access then still
+        belongs to the previous session, so the safe recovery is to mark the
+        unfinished handoff as failed and return the chain to ``running``; the
+        checkpoint from PREPARE stays untouched.
+        """
+        if chain.state != "handoff":
+            return chain
+        latest = self.db.latest_handoff(chain.id)
+        if latest is not None and latest.state == "pending":
+            self.db.update_handoff(
+                latest.id,
+                state="failed",
+                error="controller restarted while the handoff was in flight",
+                finished=True,
+            )
+            self.db.append_event(
+                event_key=f"{chain.id}:handoff-recovered:{latest.id}",
+                kind="handoff_recovered",
+                source="controller",
+                payload={"sequence": latest.sequence, "phase": latest.phase},
+                chain_id=chain.id,
+            )
+            self._log(
+                "warning",
+                "rolled back an interrupted handoff",
+                chain_id=chain.id,
+                sequence=latest.sequence,
+                phase=latest.phase,
+            )
+        return self.db.transition_chain(
+            chain.id, "running", reason="recovered from interrupted handoff"
         )
 
     # ------------------------------------------------------------------

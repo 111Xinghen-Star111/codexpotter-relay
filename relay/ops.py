@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .agent_session import CodexAgent
 from .appserver import AppServer
@@ -163,6 +163,51 @@ def stop_chain(database: Database, chain: Chain, reason: str = "stopped by opera
     if chain.state in ("complete", "stopped", "failed"):
         return chain
     return database.transition_chain(chain.id, "stopped", reason=reason)
+
+
+def make_event_sink(database: Database, chain_id: str) -> Callable[[str, dict[str, Any]], None]:
+    """Return a notification recorder that stores protocol events for a chain.
+
+    Only events that carry durable meaning are stored: turn boundaries, thread
+    creation, compaction, hook executions and errors. Streaming deltas are
+    deliberately ignored so the database does not grow with every token.
+    """
+    interesting = {
+        "turn/started",
+        "turn/completed",
+        "thread/started",
+        "thread/compacted",
+        "thread/compact/completed",
+        "hook/started",
+        "hook/completed",
+        "error",
+        "thread/error",
+    }
+
+    def sink(method: str, params: dict[str, Any]) -> None:
+        if method not in interesting:
+            return
+        payload = dict(params)
+        if method.startswith("hook/"):
+            run = params.get("run") or {}
+            payload["eventName"] = run.get("eventName")
+            payload["status"] = run.get("status")
+        kind = method.replace("/", "_")
+        turn_key = params.get("turnId") or (params.get("turn") or {}).get("id") or ""
+        event_key = (
+            f"{chain_id}:appserver:{kind}:{params.get('threadId') or ''}:{turn_key}:"
+            f"{int(time.time() * 1000)}"
+        )
+        database.append_event(
+            event_key=event_key,
+            kind=kind,
+            source="appserver",
+            payload=payload,
+            chain_id=chain_id,
+            session_id=params.get("threadId"),
+        )
+
+    return sink
 
 
 def doctor(config: RelayConfig) -> dict[str, Any]:

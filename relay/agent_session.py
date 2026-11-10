@@ -123,12 +123,14 @@ class CodexAgent:
         *,
         project_root: Path,
         logger: Any = None,
+        event_sink: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> None:
         self._app = app_server
         self._project_root = project_root
         self._threads: dict[str, ThreadState] = {}
         self._lock = threading.Lock()
         self._logger = logger
+        self._event_sink = event_sink
         self._app.add_notification_listener(self._on_notification)
 
     # ------------------------------------------------------------------
@@ -274,6 +276,11 @@ class CodexAgent:
     # notification handling
     # ------------------------------------------------------------------
     def _on_notification(self, method: str, params: dict[str, Any]) -> None:
+        if self._event_sink is not None:
+            try:
+                self._event_sink(method, params)
+            except Exception:  # noqa: BLE001 - event capture must never break a turn
+                self._log("warning", "event sink failed", method=method)
         thread_id = params.get("threadId")
         if method == "thread/tokenUsage/updated":
             usage = TokenUsage.from_notification(params.get("tokenUsage") or {})
