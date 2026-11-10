@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # must equal MIGRATIONS[-1].version
 
 #: Chain states. ``handoff`` means a transition is in flight and no session owns
 #: write access; ``paused`` and ``stopped`` are terminal for the automatic loop
@@ -462,7 +462,13 @@ class Database:
                 else:
                     connection.execute("COMMIT")
             row = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()
-            return int(row["v"] or 0)
+            version = int(row["v"] or 0)
+            if version != SCHEMA_VERSION:
+                raise DatabaseError(
+                    f"schema is at version {version} but the code expects {SCHEMA_VERSION}; "
+                    "a migration is missing"
+                )
+            return version
 
     def schema_version(self) -> int:
         """Return the schema version currently stored in the database."""

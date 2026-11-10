@@ -220,10 +220,15 @@ class RelayToolbox:
             config=self.config,
             mode="production",
         )
+        budgets = {
+            "max_handoffs": arguments.get("max_handoffs"),
+            "max_model_requests": arguments.get("max_model_requests"),
+        }
         pid, log_path = spawn_detached_controller(
             chain.id,
             config_path=self._config_path,
             db_path=self.db.path,
+            budgets={key: int(value) for key, value in budgets.items() if value},
         )
         return ToolResult(
             f"Work chain {chain.id} started.\n"

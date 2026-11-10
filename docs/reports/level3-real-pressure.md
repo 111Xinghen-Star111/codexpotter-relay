@@ -16,7 +16,7 @@
 # 开发报告 / Development Report — `ch_529726d2a309`
 
 - 生成时间 / Generated: 2026-11-10 12:41:12
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\real-pressure-1794285401`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\real-pressure-1794285401`
 - 工作分支 / Work branch: `relay/ch_529726d2a309`
 - 模式 / Mode: test (test level: real-pressure)
 - 状态 / State: **complete**
@@ -72,7 +72,7 @@ Create a notes module notes.py with three small functions and unit tests, in sma
 ## 验收 / Acceptance
 
 - 2026-11-10 12:41:12: complete=True (complete)
-  - `"C:\Users\hp\AppData\Local\Programs\Python\Python311\python.exe" -m unittest discover -s tests -v` -> exit 0 (pass)
+  - `"<python.exe 路径>" -m unittest discover -s tests -v` -> exit 0 (pass)
 
 ## Hooks 采集 / Hook evidence
 

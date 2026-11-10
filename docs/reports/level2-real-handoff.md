@@ -18,7 +18,7 @@
 # 开发报告 / Development Report — `ch_4995576530b5`
 
 - 生成时间 / Generated: 2026-11-10 12:29:25
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\real-handoff-1794284541`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\real-handoff-1794284541`
 - 工作分支 / Work branch: `relay/ch_4995576530b5`
 - 模式 / Mode: test (test level: real-handoff)
 - 状态 / State: **complete**
@@ -81,7 +81,7 @@ Build a tiny calculator module in small increments: add, sub, mul, div with unit
 ## 验收 / Acceptance
 
 - 2026-11-10 12:29:25: complete=True (complete)
-  - `"C:\Users\hp\AppData\Local\Programs\Python\Python311\python.exe" -m unittest discover -s tests -v` -> exit 0 (pass)
+  - `"<python.exe 路径>" -m unittest discover -s tests -v` -> exit 0 (pass)
 
 ## Hooks 采集 / Hook evidence
 

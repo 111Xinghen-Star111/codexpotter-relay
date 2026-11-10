@@ -22,7 +22,7 @@
 # 开发报告 / Development Report — `ch_750129497034`
 
 - 生成时间 / Generated: 2026-11-10 12:42:00
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\mock-happy-1794285709`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\mock-happy-1794285709`
 - 工作分支 / Work branch: `relay/ch_750129497034`
 - 模式 / Mode: test (test level: mock)
 - 状态 / State: **complete**
@@ -111,7 +111,7 @@ mock happy path
 # 开发报告 / Development Report — `ch_241cd3593419`
 
 - 生成时间 / Generated: 2026-11-10 12:42:00
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\mock-rollback-1794285712`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\mock-rollback-1794285712`
 - 工作分支 / Work branch: `relay/ch_241cd3593419`
 - 模式 / Mode: test (test level: mock)
 - 状态 / State: **failed**
@@ -192,7 +192,7 @@ mock rollback
 # 开发报告 / Development Report — `ch_c8e113308ff3`
 
 - 生成时间 / Generated: 2026-11-10 12:42:00
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\mock-guard-1794285714`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\mock-guard-1794285714`
 - 工作分支 / Work branch: `relay/ch_c8e113308ff3`
 - 模式 / Mode: test (test level: mock)
 - 状态 / State: **stopped**
@@ -279,7 +279,7 @@ mock infinite loop guard
 # 开发报告 / Development Report — `ch_ffdc7a05d979`
 
 - 生成时间 / Generated: 2026-11-10 12:42:00
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\mock-iso-a-1794285716`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\mock-iso-a-1794285716`
 - 工作分支 / Work branch: `relay/ch_ffdc7a05d979`
 - 模式 / Mode: test (test level: mock)
 - 状态 / State: **complete**
@@ -353,7 +353,7 @@ mock isolation project 1
 # 开发报告 / Development Report — `ch_4fde9fcd2724`
 
 - 生成时间 / Generated: 2026-11-10 12:42:00
-- 项目 / Project: `C:\Users\hp\AppData\Local\CodexPotterRelay\test-workspaces\mock-iso-b-1794285716`
+- 项目 / Project: `%LOCALAPPDATA%\CodexPotterRelay\test-workspaces\mock-iso-b-1794285716`
 - 工作分支 / Work branch: `relay/ch_4fde9fcd2724`
 - 模式 / Mode: test (test level: mock)
 - 状态 / State: **complete**

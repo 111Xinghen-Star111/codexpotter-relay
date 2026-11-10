@@ -16,12 +16,25 @@ relay-logs/
 # Local test scratch projects produced by Level 2 / Level 3 tests
 .relay-test/
 
+# Relay bookkeeping inside managed projects (always git-ignored there too)
+.relay/
+
 # Editor / OS noise
 .vscode/
 .idea/
 Thumbs.db
 desktop.ini
 
-# pip editable install metadata
-*.egg-info/
+# Secrets and local configuration (never commit real values)
+.env
+.env.local
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+credentials.json
 
+# Local databases and generated reports
+*.db
+*.db-wal
+*.db-shm

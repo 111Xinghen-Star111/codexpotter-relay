@@ -1,7 +1,7 @@
 # 开发报告 / Development Report — `ch_b48e9ae495ab`
 
 - 生成时间 / Generated: 2026-11-10 15:24:16
-- 项目 / Project: `D:\gpt\tools\agent-recap`
+- 项目 / Project: `<示例项目路径>`
 - 工作分支 / Work branch: `relay/ch_b48e9ae495ab`
 - 模式 / Mode: production
 - 状态 / State: **complete**
