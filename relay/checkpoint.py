@@ -22,7 +22,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from .paths import PROJECT_STATE_DIR, project_state_dir
 
@@ -130,9 +130,20 @@ class GitRepository:
         self.path = path
         self._git = find_git_executable(git_executable)
 
+    def _command(self, arguments: Sequence[str]) -> list[str]:
+        """Return the git command line for ``arguments``.
+
+        ``safe.directory`` is passed explicitly for the managed project: on
+        Windows a project can be owned by another account (for example one
+        created by a sandboxed tool), and git then refuses every command with
+        "dubious ownership". Scoping the exception to this one path keeps the
+        protection for every other repository.
+        """
+        return [self._git, "-c", f"safe.directory={self.path}", *arguments]
+
     def _run(self, *arguments: str, timeout: float = 120.0) -> str:
         completed = subprocess.run(
-            [self._git, *arguments],
+            self._command(arguments),
             cwd=str(self.path),
             capture_output=True,
             text=True,
@@ -153,7 +164,7 @@ class GitRepository:
         if not self.path.is_dir():
             return False
         completed = subprocess.run(
-            [self._git, "rev-parse", "--is-inside-work-tree"],
+            self._command(["rev-parse", "--is-inside-work-tree"]),
             cwd=str(self.path),
             capture_output=True,
             text=True,
@@ -173,6 +184,33 @@ class GitRepository:
         """Set a local commit identity if the repository has none."""
         self._run("config", "user.name", name)
         self._run("config", "user.email", email)
+
+    def ensure_identity(self) -> bool:
+        """Guarantee a commit identity exists, using a repository-local default.
+
+        A machine without ``user.name``/``user.email`` makes every commit fail
+        with "Author identity unknown". Only the local config is touched, so the
+        user's global git settings are never modified.
+        """
+        name = self._config_value("user.name")
+        email = self._config_value("user.email")
+        if name and email:
+            return False
+        self.configure_identity(name or "CodexPotter Relay", email or "relay@localhost")
+        return True
+
+    def _config_value(self, key: str) -> str:
+        """Return a git config value, or an empty string when unset."""
+        completed = subprocess.run(
+            self._command(["config", "--get", key]),
+            cwd=str(self.path),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        return completed.stdout.strip() if completed.returncode == 0 else ""
 
     def snapshot(self) -> GitSnapshot:
         """Return the current branch, head commit and dirty flag.
@@ -195,7 +233,7 @@ class GitRepository:
         """Return the checked-out branch name, even before the first commit."""
         for arguments in (("symbolic-ref", "--short", "HEAD"), ("rev-parse", "--abbrev-ref", "HEAD")):
             completed = subprocess.run(
-                [self._git, *arguments],
+                self._command(list(arguments)),
                 cwd=str(self.path),
                 capture_output=True,
                 text=True,
@@ -210,7 +248,7 @@ class GitRepository:
     def _rev_parse(self, revision: str) -> str | None:
         """Return the commit hash for ``revision``, or None when it is unborn."""
         completed = subprocess.run(
-            [self._git, "rev-parse", "--verify", "--quiet", revision],
+            self._command(["rev-parse", "--verify", "--quiet", revision]),
             cwd=str(self.path),
             capture_output=True,
             text=True,
@@ -228,7 +266,7 @@ class GitRepository:
         if not self.is_repository():
             self.init()
         existing = subprocess.run(
-            [self._git, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            self._command(["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"]),
             cwd=str(self.path),
             capture_output=True,
             text=True,

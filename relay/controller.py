@@ -261,6 +261,11 @@ class RelayController:
             chain = self.db.transition_chain(chain.id, "running")
 
         self._state = self._load_or_restore_state(chain)
+        if self.db.latest_checkpoint(chain.id) is None:
+            # A chain that never crosses a pressure threshold would otherwise
+            # finish without any checkpoint. Writing one at the start gives
+            # crash recovery and the report a git-anchored baseline.
+            self._write_checkpoint(chain, git, reason="initial")
         sessions_seen: set[str] = {session.id for session in self.db.main_sessions(chain.id)}
         stop_reason = "loop finished"
         validation: ValidationReport | None = None
@@ -434,6 +439,7 @@ class RelayController:
         if not project_root.is_dir():
             raise CheckpointError(f"project directory does not exist: {project_root}")
         ensure_scaffold(project_root)
+        git.ensure_identity()
         git.ensure_branch(chain.work_branch)
         if not git.snapshot().has_commits:
             git.commit_all("chore: initialise relay work chain")

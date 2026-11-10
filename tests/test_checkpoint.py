@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -173,6 +174,41 @@ class GitRepositoryTests(unittest.TestCase):
             git.commit_all("first")
             (root / "b.txt").write_text("changed", encoding="utf-8")
             self.assertTrue(git.snapshot().dirty)
+
+    def test_ensure_identity_makes_commit_possible_without_global_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = GitRepository(root)
+            git.init()
+            # Simulate a machine with no git identity at all.
+            for key in ("user.name", "user.email"):
+                subprocess.run(
+                    [git._git, "config", "--local", "--unset", key],  # noqa: SLF001
+                    cwd=str(root),
+                    capture_output=True,
+                    check=False,
+                )
+            self.assertTrue(git.ensure_identity())
+            self.assertFalse(git.ensure_identity())
+            (root / "a.txt").write_text("hello", encoding="utf-8")
+            self.assertIsNotNone(git.commit_all("first"))
+
+    def test_unborn_branch_snapshot_does_not_raise(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = GitRepository(root)
+            git.init()
+            snapshot = git.snapshot()
+            self.assertIsNone(snapshot.head)
+            self.assertFalse(snapshot.has_commits)
+            self.assertTrue(snapshot.branch)
+
+    def test_git_calls_scope_safe_directory_to_the_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            git = GitRepository(Path(directory))
+            command = git._command(["--version"])  # noqa: SLF001
+            self.assertIn("safe.directory", " ".join(command))
+            self.assertTrue(any(str(Path(directory)) in part for part in command))
 
 
 if __name__ == "__main__":
